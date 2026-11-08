@@ -20,17 +20,12 @@ export function renderForest(app) {
   }
   const top = h('div', { class: 'fv-top' }, pill);
 
-  const zoom = h('div', { class: 'fv-zoom' },
-    h('button', { type: 'button', class: 'fv-btn', 'aria-label': 'Zoom in', onclick: () => app.forest.zoomBy(1.5) }, '+'),
-    h('button', { type: 'button', class: 'fv-btn', 'aria-label': 'Zoom out', onclick: () => app.forest.zoomBy(1 / 1.5) }, '−'),
-    h('button', { type: 'button', class: 'fv-btn', 'aria-label': 'Show the whole forest', onclick: () => app.forest.fit(true) }, '⤢'));
-
   const bottom = tool ? buildBar(app) : h('div', { class: 'fv-actions' },
     actionBtn('🔨', 'Build', () => { app.buildTool = { kind: 'place', def: null }; app.render(); }),
     actionBtn('🧭', 'Expand', () => expandModal(app), ready ? 'glow' : ''),
     actionBtn('📋', 'Tasks', () => tasksModal(app), '', affordable));
 
-  app.forestOverlay.replaceChildren(top, zoom, bottom);
+  app.forestOverlay.replaceChildren(top, bottom);
   // entering build mode: move the clearing in view clear of the build panel
   if (tool && !app.ui.buildFocused) {
     app.ui.buildFocused = true;

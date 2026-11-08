@@ -1206,6 +1206,10 @@ and zoomable forest screen. The starting clearing sits in the middle.
   also open plain clearings for extra building space (Config: starting at
   10 planks + 8 stones, rising with each glade). While a story clearing is
   ready, every expansion opens the story clearing, free.
+- **The map's edge:** hedge walls line every open side of the forest and
+  dense undergrowth fills everything beyond, so the hedges are the physical
+  border of the map. Expanding pushes the border back; signposts on the
+  hedge mark where the forest can grow.
 - Mushrooms walk between clearings to reach their workstations; idle
   mushrooms, Guests and Wild Visitors stay in the starting clearing.
 

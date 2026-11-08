@@ -4,7 +4,7 @@
 import { AREA_W, AREA_H, STRUCTURES, JOB_BY_ID } from '../content/world.js';
 import { MUTATION_BY_ID } from '../content/genetics.js';
 import { getConfig } from '../config.js';
-import { drawTile, drawStructure, drawArt, TILE } from './world.js';
+import { drawTile, drawStructure, TILE } from './world.js';
 import { drawMushroom, SPRITE_W, SPRITE_H, resourceColor } from './sprites.js';
 import { conditionsAt } from '../core/time.js';
 import { makeRng, hash } from '../core/rng.js';
@@ -23,7 +23,9 @@ const PAN_MARGIN = 60; // how far beyond the area's edge the view's centre may g
 const ZOOM_RANGE = 4; // max zoom = fit zoom × this
 const TAP_SLOP = 7; // CSS px a pointer may move and still count as a tap
 const GRASS_TILE = 160; // logical px covered by one copy of the grass painting
-const CANOPY_TILE = 300; // logical px covered by one copy of the canopy shadow
+const CANOPY_TILE = 600; // logical px covered by one copy of the canopy shadow (large, soft light gaps)
+const RIM = 24; // thickness of the hedge wall at the map's edge (logical px)
+const FOLIAGE_ROW = 26; // height of one row of bushes in the undergrowth beyond the map
 
 // dappled canopy light and sun rays by time of day: shade/light opacity, light tint, ray strength
 const CANOPY = {
@@ -66,6 +68,15 @@ export class ForestView {
     this.canopyImg.onload = () => { this.canopy = makeCanopy(this.canopyImg); };
     this.canopyImg.src = 'assets/art/canopy-shadow.webp';
     this.rayCache = new Map();
+
+    // the map's physical edge: hedge walls facing inward, dense undergrowth beyond
+    this.hedges = {};
+    for (const [k, file] of Object.entries({ south: 'hedge-strip', north: 'hedge-strip-b', west: 'hedge-strip-r', east: 'hedge-strip-v' })) {
+      const img = new Image();
+      img.onload = () => { if (k === 'south') this.foliage = makeFoliage(img); };
+      img.src = `assets/art/${file}.webp`;
+      this.hedges[k] = img;
+    }
 
     canvas.addEventListener('pointerdown', (e) => this.onDown(e));
     canvas.addEventListener('pointermove', (e) => this.onMove(e));
@@ -139,9 +150,11 @@ export class ForestView {
   computeFit() {
     const ins = this.insets();
     const fitTo = (w, h) => Math.min((this.vw - 2 * ins.side) / w, (this.vh - ins.top - ins.bottom) / h);
-    this.fitZoom = Math.max(0.5, fitTo(LW, LH));
+    // leave room to see the hedge wall around the edge of the map
+    const pad = RIM * 1.3;
+    this.fitZoom = Math.max(0.5, fitTo(LW + pad, LH + pad));
     const b = this.bounds();
-    this.forestZoom = Math.max(0.25, Math.min(this.fitZoom, fitTo(b.x1 - b.x0, b.y1 - b.y0)));
+    this.forestZoom = Math.max(0.25, Math.min(this.fitZoom, fitTo(b.x1 - b.x0 + pad, b.y1 - b.y0 + pad)));
     this.minZoom = this.forestZoom;
     this.maxZoom = this.fitZoom * ZOOM_RANGE;
   }
@@ -230,8 +243,9 @@ export class ForestView {
       for (const dir of ['north', 'east', 'south', 'west']) {
         const d = G.DIRECTIONS[dir];
         if (G.areaAt(this.app.state, area.cx + d.dx, area.cy + d.dy)) continue;
-        const x = ox + LW / 2 + d.dx * (LW / 2 + 10);
-        const y = oy + LH / 2 + d.dy * (LH / 2 + 10) + 8;
+        // on the hedge wall at the middle of the open edge
+        const x = ox + LW / 2 + d.dx * (LW / 2 + 2);
+        const y = oy + LH / 2 + d.dy * (LH / 2) + (d.dy < 0 ? 6 : d.dy > 0 ? 8 : 8);
         out.push({ areaId: id, dir, x, y, ready: G.expansionOption(this.app.state, id, dir).ok });
       }
     }
@@ -505,40 +519,6 @@ export class ForestView {
   }
 
   // ------------------------------------------------------------- drawing
-  /** Trees and undergrowth filling the empty cells around the forest's clearings. */
-  woods() {
-    const areas = Object.values(this.app.state.world.areas);
-    const sig = areas.map((a) => a.cx + ',' + a.cy).sort().join(';');
-    if (this.woodsSig === sig) return this.woodsCache;
-    const occ = new Set(areas.map((a) => a.cx + ',' + a.cy));
-    const cells = new Set();
-    for (const a of areas) for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
-      const k = (a.cx + dx) + ',' + (a.cy + dy);
-      if (!occ.has(k)) cells.add(k);
-    }
-    const small = ['bush', 'fern', 'flowers', 'stones', 'log', 'fern', 'flowers'];
-    const out = [];
-    for (const k of cells) {
-      const [cx, cy] = k.split(',').map(Number);
-      const rng = makeRng(hash('woods', k));
-      const near = { n: occ.has(cx + ',' + (cy - 1)), s: occ.has(cx + ',' + (cy + 1)), w: occ.has((cx - 1) + ',' + cy), e: occ.has((cx + 1) + ',' + cy) };
-      const touching = near.n || near.s || near.w || near.e;
-      for (let i = 0; i < 26; i++) {
-        const lx = rng.next() * LW;
-        const ly = rng.next() * LH;
-        // leave room at edges that face a clearing (and its signpost)
-        if ((near.n && ly < 26) || (near.s && ly > LH - 12) || (near.w && lx < 14) || (near.e && lx > LW - 22)) continue;
-        if (touching && Math.hypot(lx - LW / 2, ly - LH / 2) < 30) { /* centre of an open cell: keep mixed */ }
-        const treeChance = touching ? 0.4 : 0.7;
-        const kind = rng.chance(treeChance) ? (rng.chance(0.5) ? 'tree' : 'pine') : rng.pick(small);
-        out.push({ x: Math.round(cx * LW + lx), y: Math.round(cy * LH + ly), kind });
-      }
-    }
-    this.woodsSig = sig;
-    this.woodsCache = out;
-    return out;
-  }
-
   terrainFor(id, area, t, rm) {
     let c = this.terrainCaches.get(id);
     if (!c) {
@@ -570,7 +550,7 @@ export class ForestView {
     const inView = (x, y, pad = TILE * 2) => x > view.x0 - pad && x < view.x0 + view.w + pad && y > view.y0 - pad && y < view.y0 + view.h + pad;
 
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = '#4f7a38';
+    ctx.fillStyle = '#16231a';
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
     ctx.setTransform(k, 0, 0, k, ox, oy);
 
@@ -594,11 +574,8 @@ export class ForestView {
       ctx.drawImage(this.terrainFor(a.id, a.area, t, rm), a.ox, a.oy);
     }
 
-    // 3. depth-sorted: woods, signposts, structures, mushrooms
+    // 3. depth-sorted: structures and mushrooms
     const items = [];
-    for (const d of this.woods()) if (inView(d.x, d.y)) items.push({ y: d.y + TILE, draw: () => drawArt(ctx, d.kind, d.x, d.y, rm ? 0 : t) });
-    if (!this.postCache || t - this.postCache.t > 0.5) this.postCache = { t, posts: this.signposts() };
-    for (const sp of this.postCache.posts) if (inView(sp.x, sp.y)) items.push({ y: sp.y, draw: () => drawSignpost(ctx, sp, t, rm) });
     for (const a of areas) {
       for (const o of a.area.objects) {
         if (!inView(a.ox + o.x * TILE, a.oy + o.y * TILE)) continue;
@@ -609,11 +586,16 @@ export class ForestView {
     items.sort((p, q) => p.y - q.y);
     for (const it of items) it.draw();
 
-    // 4. light through the treetops: drifting canopy shade with sunlit gaps
+    // 4. the edge of the map: dense undergrowth beyond, hedge walls along every open side
+    this.drawBorders(ctx, view, areas);
+    if (!this.postCache || t - this.postCache.t > 0.5) this.postCache = { t, posts: this.signposts() };
+    for (const sp of this.postCache.posts) if (inView(sp.x, sp.y)) drawSignpost(ctx, sp, t, rm);
+
+    // 5. light through the treetops: drifting canopy shade with sunlit gaps
     const lightOn = s.settings.canopyLight !== false;
     if (lightOn && this.canopy) this.drawCanopy(ctx, view, t, rm);
 
-    // 5. build overlay: tile grid on every clearing
+    // 6. build overlay: tile grid on every clearing
     if (this.app.buildTool) {
       ctx.strokeStyle = 'rgba(255,255,255,0.22)';
       ctx.lineWidth = 1 / c.zoom;
@@ -636,7 +618,7 @@ export class ForestView {
       }
     }
 
-    // 6. pop-ups
+    // 7. pop-ups
     for (const p of this.popups) {
       const yy = p.y - (1.6 - p.life) * 8;
       ctx.globalAlpha = Math.min(1, p.life);
@@ -650,7 +632,7 @@ export class ForestView {
       ctx.globalAlpha = 1;
     }
 
-    // 7. time of day and weather, across the whole screen
+    // 8. time of day and weather, across the whole screen
     const cond = this.app.conditions;
     if (cond.phase === 'night' || cond.phase === 'dusk') {
       ctx.fillStyle = 'rgba(230,255,140,0.9)';
@@ -677,6 +659,46 @@ export class ForestView {
         ctx.fillRect(rx * d, ry * d, 1.5 * d, 7 * d);
       }
     }
+  }
+
+  /** Undergrowth fills every cell outside the map; hedge walls line each open edge. */
+  drawBorders(ctx, view, areas) {
+    const occ = new Set(areas.map((a) => a.area.cx + ',' + a.area.cy));
+    ctx.imageSmoothingEnabled = true;
+    // undergrowth in every empty cell in view
+    const cx0 = Math.floor(view.x0 / LW);
+    const cx1 = Math.floor((view.x0 + view.w) / LW);
+    const cy0 = Math.floor(view.y0 / LH);
+    const cy1 = Math.floor((view.y0 + view.h) / LH);
+    if (this.foliage) {
+      if (!this.foliage._pattern) {
+        this.foliage._pattern = ctx.createPattern(this.foliage, 'repeat');
+        this.foliage._pattern.setTransform(new DOMMatrix().scaleSelf(this.foliage.world, this.foliage.world));
+      }
+      ctx.fillStyle = this.foliage._pattern;
+    } else ctx.fillStyle = '#1d3322';
+    for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) {
+      if (!occ.has(cx + ',' + cy)) ctx.fillRect(cx * LW - 0.5, cy * LH - 0.5, LW + 1, LH + 1);
+    }
+    // hedge walls: straddle each open edge, bushes facing into the clearing
+    const strip = (img, x, y, w, h, vertical) => {
+      if (!img?.naturalWidth) return;
+      if (!img._pattern) img._pattern = ctx.createPattern(img, vertical ? 'repeat-y' : 'repeat-x');
+      const sc = vertical ? w / img.naturalWidth : h / img.naturalHeight;
+      img._pattern.setTransform(new DOMMatrix().translateSelf(x, y).scaleSelf(sc, sc));
+      ctx.fillStyle = img._pattern;
+      ctx.fillRect(x, y, w, h);
+    };
+    const inner = RIM * 0.4; // how far the wall reaches into the clearing
+    for (const { area, ox, oy } of areas) {
+      if (ox > view.x0 + view.w + RIM || ox + LW < view.x0 - RIM || oy > view.y0 + view.h + RIM || oy + LH < view.y0 - RIM) continue;
+      const open = (dx, dy) => !occ.has((area.cx + dx) + ',' + (area.cy + dy));
+      if (open(-1, 0)) strip(this.hedges.west, ox - RIM + inner, oy - inner, RIM, LH + 2 * inner, true);
+      if (open(1, 0)) strip(this.hedges.east, ox + LW - inner, oy - inner, RIM, LH + 2 * inner, true);
+      if (open(0, -1)) strip(this.hedges.north, ox - inner, oy - RIM + inner, LW + 2 * inner, RIM, false);
+      if (open(0, 1)) strip(this.hedges.south, ox - inner, oy + LH - inner, LW + 2 * inner, RIM, false);
+    }
+    ctx.imageSmoothingEnabled = false;
   }
 
   /** Canopy shade over everything, in world space so it pans and zooms with the forest. */
@@ -817,6 +839,35 @@ function tile(ctx, img, tw, th, offX, offY, view) {
   pat.setTransform(new DOMMatrix().translateSelf(offX, offY).scaleSelf(tw / img.width, th / img.height));
   ctx.fillStyle = pat;
   ctx.fillRect(view.x0, view.y0, view.w, view.h);
+}
+
+/** Dense, dark undergrowth: staggered rows of hedge, tileable in both directions. */
+function makeFoliage(img) {
+  const rowH = 64; // texture px per row of bushes
+  const sw = Math.round(img.naturalWidth * (rowH / img.naturalHeight));
+  const step = Math.round(rowH * 0.55);
+  const c = document.createElement('canvas');
+  c.width = sw;
+  c.height = step * 2;
+  const x = c.getContext('2d');
+  x.fillStyle = '#132219';
+  x.fillRect(0, 0, c.width, c.height);
+  for (let k = -2; k <= 2; k++) {
+    const off = (((k % 2) + 2) % 2) * (sw / 2);
+    for (const dx of [off - sw, off]) x.drawImage(img, dx, k * step - rowH * 0.3, sw, rowH);
+  }
+  // deepen it so the clearings stand out, then scatter a few berries and blossoms
+  x.fillStyle = 'rgba(6, 14, 9, 0.38)';
+  x.fillRect(0, 0, c.width, c.height);
+  const dots = ['#c85a6a', '#e0c060', '#b8a0e0', '#e8e0d0'];
+  for (let i = 0; i < 6; i++) {
+    x.fillStyle = dots[i % dots.length];
+    x.globalAlpha = 0.7;
+    x.fillRect(Math.round((i * 53 + 17) % sw), Math.round((i * 31 + 9) % c.height), 2, 2);
+  }
+  x.globalAlpha = 1;
+  c.world = FOLIAGE_ROW / rowH; // world px per texture px
+  return c;
 }
 
 /** Split the canopy mask into a dark shade layer and a light-gap layer, both seamlessly tileable. */

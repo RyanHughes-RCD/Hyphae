@@ -31,26 +31,19 @@
 html, body { margin: 0; background: var(--bg); color: var(--text); }
 button, input, select, textarea { font-family: inherit; }
 body { min-height: 100vh; -webkit-tap-highlight-color: transparent; }
-#app { --hedge: 24px; height: 100vh; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
-@media (min-width: 640px) { #app { --hedge: 34px; } }
+#app { --hedge: 14px; height: 100vh; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+
 .stage { position: relative; flex: 1; min-height: 0; }
-.screen-hedge { position: absolute; top: 0; bottom: 0; width: var(--hedge); z-index: 4; pointer-events: none; filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.45)); }
-.screen-hedge.left { left: calc(var(--hedge) * -0.3); background: url("assets/art/hedge-strip-v.webp") center top / 100% auto round; }
-.screen-hedge.right { right: calc(var(--hedge) * -0.3); background: url("assets/art/hedge-strip-r.webp") center top / 100% auto round; }
 .screen-inner { max-width: 760px; margin: 0 auto; }
 .boot { padding: 40px 16px; text-align: center; color: var(--muted); }
 
 /* top bar */
-.topbar { position: relative; z-index: 5; display: flex; justify-content: space-between; align-items: center; gap: 8px;
+.topbar { position: relative; z-index: 5; border-bottom: 2px solid #0e1610; display: flex; justify-content: space-between; align-items: center; gap: 8px;
   padding: calc(8px + env(safe-area-inset-top, 0px)) 16px 8px; background: rgba(27, 36, 25, 0.96); border-bottom: 1px solid var(--line); }
 .brand { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .brand-mark { font-size: 22px; }
 .forest-name { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .top-stats { display: flex; gap: 6px; flex-shrink: 0; }
-.topbar::after, .bottomnav::before { content: ""; position: absolute; left: 0; right: 0; height: var(--hedge); pointer-events: none;
-  background: url("assets/art/hedge-strip.webp") left center / auto 100% round; filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.4)); }
-.topbar::after { bottom: calc(var(--hedge) * -0.65); }
-.bottomnav::before { top: calc(var(--hedge) * -0.6); }
 
 .pill { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 999px; background: var(--card); font-size: 13.5px; white-space: nowrap; }
 .pill.glimmer b { color: var(--accent); }
@@ -127,13 +120,11 @@ p { line-height: 1.45; margin: 6px 0; }
 .fv-btn.wide { font-size: 13.5px; font-weight: 700; padding: 0 14px; }
 .fv-btn:hover { border-color: var(--accent); }
 .fv-badge { position: absolute; top: -6px; right: -6px; background: var(--accent2); color: #fff; border-radius: 999px; font-size: 9px; padding: 3px 6px; }
-.fv-zoom .fv-btn { font-size: 27px; line-height: 1; }
-.fv-zoom { position: absolute; right: calc(var(--hedge) * 0.8); bottom: calc(var(--hedge) * 0.7 + 8px); display: flex; flex-direction: column; gap: 6px; }
-.fv-actions { position: absolute; left: calc(var(--hedge) * 0.8); right: calc(var(--hedge) * 0.8 + 56px); bottom: calc(var(--hedge) * 0.7 + 8px); display: flex; gap: 6px; }
+.fv-actions { position: absolute; left: calc(var(--hedge) * 0.8); right: calc(var(--hedge) * 0.8); bottom: calc(var(--hedge) * 0.7 + 8px); display: flex; gap: 6px; }
 .fv-btn.action { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-width: 64px; min-height: 52px; padding: 4px 10px; }
 .fv-btn.action .fv-ico { font-size: 18px; line-height: 1; }
 .fv-btn.action .fv-lbl { font-size: 9px; font-weight: 700; }
-.fv-overlay .build-bar { position: absolute; left: calc(var(--hedge) * 0.8); right: calc(var(--hedge) * 0.8 + 56px); bottom: calc(var(--hedge) * 0.7 + 8px); margin: 0; max-height: 44%; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px;
+.fv-overlay .build-bar { position: absolute; left: calc(var(--hedge) * 0.8); right: calc(var(--hedge) * 0.8); bottom: calc(var(--hedge) * 0.7 + 8px); margin: 0; max-height: 44%; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px;
   background: rgba(35, 47, 32, 0.95); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45); }
 .fv-overlay .build-list { display: flex; overflow-x: auto; gap: 8px; scrollbar-width: thin; }
 .fv-overlay .build-item { flex: 0 0 138px; padding: 6px; gap: 2px; }

@@ -133,12 +133,10 @@ export class App {
     this.header = h('header', { class: 'topbar' });
     this.main = h('main', { class: 'screen' });
     // the forest view: full-screen canvas plus an overlay layer for its controls
-    this.canvas = h('canvas', { class: 'forest-canvas', 'aria-label': 'Forest scene. Drag to look around, pinch or scroll to zoom, tap a mushroom or structure.' });
+    this.canvas = h('canvas', { class: 'forest-canvas', 'aria-label': 'Forest scene. Drag to look around, pinch to zoom, tap a mushroom or structure.' });
     this.forestOverlay = h('div', { class: 'fv-overlay' });
     this.canvasWrap = h('div', { class: 'forest-view' }, this.canvas, this.forestOverlay);
-    // hedges mark the borders of the screen (top and bottom hedges hang off the menus)
-    this.stage = h('div', { class: 'stage' }, this.main,
-      h('div', { class: 'screen-hedge left', 'aria-hidden': 'true' }), h('div', { class: 'screen-hedge right', 'aria-hidden': 'true' }));
+    this.stage = h('div', { class: 'stage' }, this.main);
     this.nav = h('nav', { class: 'bottomnav' }, NAV.map((n) => h('button', { type: 'button', class: 'nav-btn', dataset: { id: n.id }, onclick: () => this.go(n.id) }, h('span', { class: 'nav-icon', 'aria-hidden': 'true' }, n.icon), h('span', {}, n.label))));
     this.modalRoot = h('div', { class: 'modal-root' });
     this.toastRoot = h('div', { class: 'toast-root', 'aria-live': 'polite' });
