@@ -2,672 +2,1681 @@
 
 ## A cozy breeding, collecting, and forest-life game
 
-**Game Design Document \| Version 0.1 \| November 2026**
+**Game Design Document | Version 0.2 | November 2026**
 
-> **Design direction:** Breed distinctive mushroom creatures, give them
-> meaningful work, and watch a shared forest ecosystem grow.
+> **Design direction:** Begin with three ordinary mushrooms. Breed them,
+> generation by generation, into prized specialists. Give them meaningful
+> work, grow a shared forest ecosystem, and trade exceptional genetics
+> with friends.
+
+---
+
+## 0. Document Control
+
+### 0.1 Change log
+
+| Version | Date | Summary |
+|---|---|---|
+| 0.1 | Nov 2026 | Initial design: forest, jobs, breeding, sharing, MVP scope. |
+| 0.2 | Nov 2026 | Expansion: three randomized starters; eight job stats; attribute-driven base stats; RGB colour stat budget; Advanced Traits; Perks; Mutations; stat caps; ordered breeding resolution; staged breeding unlocks; discovery-driven job unlocks; friend genetic donors; forest clock and weather; centralized configuration; anti-exploit rules; required test plan. Conflicts with v0.1 are resolved in place and listed in Appendix A. |
+
+### 0.2 Conventions
+
+- **Config:** `keyName` marks a value that must live in centralized
+  configuration (Section 19). Every number in this document marked this
+  way is an initial balance value, not a permanent decision.
+- **Stat abbreviations** used in tables: CUL Cultivation, MYC Mycology,
+  FOR Foraging, CON Construction, MAG Magic, ANI Animal Care, DIS Local
+  Discovery, SOC Social Craft.
+- **MUST / SHOULD / MAY** carry their usual requirement meanings.
+- "Owned" mushrooms belong to the player. "Guests" are imported friend
+  mushrooms (Section 14). "Wild Visitors" are temporary habitat
+  mushrooms (Section 5.6).
+
+---
 
 ## 1. Executive Summary
 
 Mushroom Forest is a cozy, pixel-art browser game about cultivating a
 magical woodland, breeding highly individual mushroom creatures, and
-building a living forest community. Players shape habitats, discover
-resources, breed mushrooms with inheritable visual and functional
-traits, assign them useful work, and gradually transform an empty
-clearing into a thriving ecosystem.
+building a living forest community.
 
-The central fantasy is not commanding an army or sending creatures away
-on expeditions. Mushrooms live in the player's forest. They wander,
-gather, cultivate, build, tend other inhabitants, and visibly contribute
-to the place they call home.
+Every player begins with exactly **three ordinary, randomized
+mushrooms**. Each mushroom's appearance is made of **ordinary
+attributes** (cap shape, colour, stem, markings, gills, glow), and those
+attributes deterministically produce its **eight job stats**. Through
+breeding, offspring recombine attributes and can gradually accumulate
+three deeper layers of genetic progression:
 
-The game is designed first as a single-player web app hosted on GitHub
-Pages. The initial social feature should use portable mushroom sharing
-(export/import or shareable genetic codes) rather than requiring a
-server. True live multiplayer, accounts, cloud saves, and
-server-authoritative breeding are future options that require a backend.
+1. **Advanced Traits** — permanent, inheritable +4 stat bonuses.
+2. **Perks** — up to three conditional behaviours that strengthen across
+   generations.
+3. **Mutations** — extremely rare visual transformations with a
+   substantial gameplay bonus (maximum one per mushroom).
+
+Mushrooms live and work in the player's forest. They wander, gather,
+cultivate, build, tend other inhabitants, and visibly contribute to the
+place they call home. There are no expeditions or combat. New jobs
+unlock as the player **discovers** new habitats and landmarks, then
+**builds or restores** the workstation that enables the job.
+
+Breeding is the central long-term progression system. A mushroom several
+generations removed from the starters — carrying multiple inherited
+Advanced Traits, three developed Perks, and a rare Mutation — should feel
+like a genuinely prized creature, and a desirable genetic donor for
+friends.
+
+The game is a single-player web app hosted on GitHub Pages. Social play
+in the MVP uses portable, validated mushroom share codes/files; no
+server is required. Live multiplayer, accounts, cloud saves, and
+server-authoritative trades are future backend features.
+
+---
 
 ## 2. Product Pillars
 
--   **Breeding is the primary collection mechanic:** every mushroom is
-    an individual with a lineage, appearance, affinities, work traits,
-    and temperament.
--   **Work is the primary progression mechanic:** mushrooms produce
-    resources and improve the forest while remaining visible in the
-    world.
--   **The forest is the home, not a menu:** the player shapes habitats
-    and watches a small ecosystem operate.
--   **Social sharing creates genetic discovery:** friends can exchange
-    mushroom genetics without losing their original creatures.
--   **Cozy, low-pressure play:** progress continues offline, there are
-    no combat expeditions, and players are encouraged to decorate and
-    experiment.
--   **Readable, extensible systems:** new mushroom species, traits,
-    jobs, plants, resources, and structures should be data-driven.
+- **Breeding is the central long-term progression and collection
+  system.** Every mushroom is an individual with a lineage, appearance,
+  stats, temperament, and up to three layers of inheritable genetic
+  bonuses. Stronger mushrooms are *bred*, never bought or rolled.
+- **Work and forest development drive world progression.** Mushrooms
+  produce resources and improve the forest while remaining visible in the
+  world; forest discoveries and construction unlock new jobs, areas, and
+  breeding mechanics.
+- **Specialization over universal power.** A mushroom with 90
+  Construction is not automatically good at Cultivation or Magic. Each
+  job rewards a different stat profile, so a varied collection always
+  matters.
+- **The forest is the home, not a menu.** The player shapes habitats and
+  watches a small ecosystem operate.
+- **Social sharing creates genetic discovery.** Friends exchange mushroom
+  genetics without losing their original creatures; exceptional
+  mushrooms become valued donors.
+- **Cozy, low-pressure play.** Progress continues offline, mushrooms are
+  never lost through work or breeding, and players are encouraged to
+  decorate and experiment.
+- **Readable, extensible, configurable systems.** Attributes, traits,
+  perks, mutations, jobs, plants, resources, structures, and all balance
+  numbers are data-driven and centrally configured.
+
+---
 
 ## 3. Target Platform and Technical Constraints
 
-  -----------------------------------------------------------------------
-  Area                                Requirement
-  ----------------------------------- -----------------------------------
-  Platform                            Responsive web app; prioritize
-                                      mobile portrait layouts, but
-                                      support desktop.
+| Area | Requirement |
+|---|---|
+| Platform | Responsive web app; prioritize mobile portrait layouts, but support desktop. |
+| Hosting | GitHub Pages static hosting, deployable from a repository subpath. |
+| Runtime | Client-side HTML/CSS/JavaScript or the project's existing framework. No backend for the MVP. |
+| Persistence | Local save in browser storage (prefer IndexedDB for structured data; localStorage is acceptable for a small prototype). |
+| Offline progress | Save a timestamp and calculate elapsed production on return. Clamp unreasonable elapsed time; prevent negative or duplicate rewards (Section 13.3). |
+| Determinism | All gameplay randomness (breeding, chance-based perks, weather, discoveries) uses seeded RNG so results are reproducible and refresh-safe (Section 20). |
+| Social sharing | MVP: export/import a mushroom as a compact JSON file or encoded share code. Validate imported data, recalculate all derived values, assign a new local instance ID, and preserve lineage/genetics (Section 14). |
+| Multiplayer limitation | GitHub Pages alone cannot securely store shared accounts, synchronize forests, or validate online trades. Real-time visits/trading are later backend features. |
+| Save safety | Version the save schema; support migration; provide manual export/import backup. Never overwrite a valid save with an invalid import. |
+| Configuration | All probabilities, stat distributions, caps, perk rules, timers, and costs live in centralized, versioned configuration (Section 19). |
+| Performance | Lightweight and touch-friendly. Avoid heavy libraries unless the existing project already uses them. |
 
-  Hosting                             GitHub Pages static hosting.
-
-  Runtime                             Client-side HTML/CSS/JavaScript or
-                                      the project's existing framework.
-                                      Do not introduce a backend for the
-                                      MVP.
-
-  Persistence                         Local save in browser storage
-                                      (prefer IndexedDB for structured
-                                      data; localStorage is acceptable
-                                      for a small prototype).
-
-  Offline progress                    Save a timestamp and calculate
-                                      elapsed production when the player
-                                      returns. Clamp unreasonable elapsed
-                                      time and prevent negative or
-                                      duplicate rewards.
-
-  Social sharing                      MVP: export/import a mushroom as a
-                                      compact JSON file or encoded share
-                                      code. Validate imported data and
-                                      assign a new local instance ID
-                                      while preserving lineage/genetics.
-
-  Multiplayer limitation              GitHub Pages alone cannot securely
-                                      store shared accounts, synchronize
-                                      forests, or validate online trades.
-                                      Treat real-time visits/trading as a
-                                      later backend feature.
-
-  Save safety                         Version the save schema; support
-                                      migration; provide manual
-                                      export/import backup. Never
-                                      overwrite a valid save with an
-                                      invalid import.
-
-  Performance                         Keep the game lightweight and
-                                      touch-friendly. Avoid heavy
-                                      libraries unless the existing
-                                      project already uses them.
-  -----------------------------------------------------------------------
+---
 
 ## 4. Core Gameplay Loop
 
-1.  **Shape the forest:** place terrain, plants, water features,
-    decorations, and work structures to create useful habitats.
-2.  **Attract and discover mushrooms:** suitable habitats and conditions
-    create opportunities to discover wild mushrooms, spores, or breeding
-    materials.
-3.  **Breed:** pair two mushrooms to create a spore cluster, incubate
-    it, and reveal an offspring with inherited traits and possible
-    mutations.
-4.  **Assign work:** place mushrooms into jobs suited to their
-    affinities, stats, traits, and temperament.
-5.  **Grow the ecosystem:** workers gather resources, cultivate plants,
-    expand mycelium, construct structures, and attract new forest life.
-6.  **Unlock and specialize:** use resources and discoveries to expand
-    the forest and create new breeding goals.
-7.  **Share:** exchange mushroom genetics with friends, then breed new
-    lineages and compare discoveries.
+1. **Shape the forest:** place terrain, plants, water features,
+   decorations, and work structures to create useful habitats.
+2. **Discover:** workers and habitats reveal new areas, resources,
+   landmarks, Wild Visitors, and rare habitats.
+3. **Build and restore:** gather materials to construct or restore
+   workstations, which unlock jobs and breeding upgrades.
+4. **Breed:** pair two mushrooms to create a spore cluster, incubate it,
+   and reveal an offspring with inherited attributes and, once unlocked,
+   inherited or newly developed Advanced Traits, Perks, and Mutations.
+5. **Assign work:** place mushrooms into jobs suited to their stats,
+   Perks, and temperament.
+6. **Grow the ecosystem:** workers gather resources, cultivate plants,
+   expand mycelium, construct structures, and attract forest life.
+7. **Specialize:** select and line-breed mushrooms toward stronger
+   specialists for particular jobs.
+8. **Share:** exchange mushroom genetics with friends, breed with their
+   donors, and compare discoveries.
 
-The short session should be satisfying (collect outputs, check workers,
-start a breeding cycle, make one small change). The long-term session
-should be about planning habitats, completing collections, optimizing
-job teams, and discovering rare genetic combinations.
+The short session should be satisfying: collect outputs, check workers,
+claim or start a breeding cycle, make one small change. The long-term
+session is about planning habitats, completing collections, optimizing
+job teams, developing lineages, and discovering rare genetic
+combinations.
+
+---
 
 ## 5. The Forest World
 
 ### 5.1 World presentation
 
 Present a cozy, living forest clearing in a crisp 32-bit-inspired
-pixel-art style. Mushrooms should be visually readable at small sizes,
-with bold dark outlines, rich cap colors, warm highlights, and distinct
+pixel-art style. Mushrooms must be visually readable at small sizes, with
+bold dark outlines, rich cap colours, warm highlights, and distinct
 silhouettes. Use the supplied mushroom sprite reference as the primary
 inspiration for cap shapes, stems, markings, palette variety, and rarity
-expression. Do not simply reproduce the reference sprites; create
-original modular assets that can be recombined.
+expression. Do not reproduce the reference sprites; create original
+modular assets that can be recombined (Section 17).
 
 ### 5.2 Player-controlled world elements
 
--   Terrain and habitat tiles (grass, damp soil, moss, leaf litter,
-    stone, shallow water, deep shade, magical ground).
--   Plants, flowers, fungi, trees, fallen logs, rocks, ponds, and
-    decorative objects.
--   Workstations and structures that unlock or improve jobs.
--   Mushroom homes or resting spots that provide identity and optional
-    comfort bonuses.
+- Terrain and habitat tiles: grass, damp soil, moss, leaf litter, stone,
+  shallow water, deep shade, magical ground.
+- Plants, flowers, fungi, trees, fallen logs, rocks, ponds, and
+  decorative objects.
+- Workstations and structures that unlock or improve jobs (Section 12).
+- The Breeding Station and its upgrades (Section 10).
+- Mushroom homes or resting spots that provide identity, resident
+  capacity (Section 6.8), and optional comfort bonuses.
 
 ### 5.3 Habitat influence
 
-Objects and terrain should influence which wild mushrooms, plants, and
-resources can appear. The player should be able to understand habitat
-requirements through tooltips or a field guide. Avoid opaque spawn
-rules: show discovered requirements and provide hints for undiscovered
-combinations.
+Objects and terrain influence which plants, resources, Wild Visitors,
+discoveries, and (once unlocked) spontaneous Mutation weights can occur.
+The player must be able to understand habitat requirements through
+tooltips or the Field Guide. Avoid opaque spawn rules: show discovered
+requirements and provide hints for undiscovered combinations.
 
 ### 5.4 Visible simulation
 
-Mushrooms should move around the forest, travel to work locations,
-perform short work animations, carry visible items where practical, and
-return to a home/rest point. If the player owns more mushrooms than can
-be animated smoothly, use a visible active population cap and represent
-remaining workers through efficient background simulation.
+Mushrooms move around the forest, travel to work locations, perform
+short work animations, carry visible items where practical, and return
+to a home/rest point. If the player owns more mushrooms than can be
+animated smoothly, use a visible active population cap
+(Config: `visibleMushroomCap`, default 10) and represent remaining
+workers through efficient background simulation. Background workers
+produce exactly the same results as animated ones.
+
+### 5.5 Forest time and weather (new)
+
+Perks and Mutations reference time of day and weather, so the forest has
+a deterministic clock.
+
+- **Forest day:** one forest day lasts Config: `forestDayLengthMinutes`
+  (default 48 real minutes), split into **Dawn** (6), **Day** (24),
+  **Dusk** (6), and **Night** (12). Phase lengths are configurable.
+- **Clock anchor:** the forest clock is derived from elapsed real time
+  since the save's `worldEpoch`, so any timestamp maps to exactly one
+  phase. Offline resolution uses the same mapping.
+- **Weather:** each forest day has seeded weather derived from
+  `hash(worldSeed, forestDayIndex)`: Clear, Cloudy, or Rain
+  (Config: `weatherWeights`, default 65 / 20 / 15). Rain occupies a
+  seeded window within the day.
+- **Presentation:** day/night tinting, rain overlay, fireflies at night.
+  Visuals never decide gameplay; they read from the simulation.
+- Real-world local time is not used for gameplay, so players who only
+  play in the evening still experience dawn and rain.
+
+### 5.6 Wild Visitors (clarifies v0.1 "attract and discover mushrooms")
+
+Suitable habitats occasionally attract a **Wild Visitor** mushroom.
+
+- Wild Visitors appear for a limited time (Config: `wildVisitorStayDays`,
+  default 1 forest day) at a habitat that matches their requirements.
+- They carry only ordinary attributes, possibly including Uncommon
+  attributes tied to that habitat. They never carry Advanced Traits,
+  Perks, or Mutations.
+- They can be used as one parent in a breeding while present. They
+  cannot be assigned to jobs and do not join the collection in the MVP
+  (pending decision D-9).
+- Their purpose is to widen the ordinary gene pool and reward habitat
+  building, without bypassing breeding progression.
+
+---
 
 ## 6. Mushroom Creatures
 
 ### 6.1 Individual identity
 
 Every mushroom is a persistent individual, not a disposable worker
-token. Each has a unique ID, name, generation, parents/lineage,
-appearance genes, affinity, work traits, temperament, and current
-assignment.
+token. Each has a unique ID, name, generation, parents/lineage, genome,
+derived stats, temperament, and current assignment. Mushrooms are never
+consumed by breeding and never lost through work.
 
-### 6.2 Genetic and character data
+### 6.2 The genome: five layers
 
-  -----------------------------------------------------------------------
-  Attribute                           Design purpose
-  ----------------------------------- -----------------------------------
-  Cap shape                           Inherited visual silhouette;
-                                      e.g. round, flat, bell, wavy,
-                                      clustered.
+| Layer | What it is | Affects stats? | Starters? | Limit |
+|---|---|---|---|---|
+| Ordinary attributes | Cap shape, cap colour (+ colour allocation sub-gene), stem, markings, gills/underside, ordinary glow. | Yes — fixed contribution per attribute (Section 7). | Basic tier only | One value per category |
+| Cosmetic genes | Accent colour, stem colour, pattern seed, size variation. | No | Yes | — |
+| Advanced Traits | Inheritable +4 bonus to one stat (Section 8.1). | Yes | None | 8 (Config) |
+| Perks | Conditional productivity / special behaviour (Section 8.2). | No — productivity modifiers | None | 3 |
+| Mutation | Rare visual effect + substantial bonus (Section 8.3). | Yes | None | 1 |
+| Temperament | Behavioural modifier (Section 6.5). | No | Yes | 1 |
 
-  Cap palette / color genes           Inherited base color and accent
-                                      color; allow blended palettes.
+### 6.3 Derived properties (not inherited directly)
 
-  Markings                            Spots, stripes, speckles, rings,
-                                      patches, gradients, or unusual
-                                      patterns.
+These are always **calculated** from the genome and never stored as
+authoritative values (they may be cached for display):
 
-  Stem                                Shape, thickness, length, and color
-                                      variation.
+- **Eight job stats** (Section 7).
+- **Affinity:** the thematic name of the mushroom's highest final stat,
+  used for flavour, sorting, filters, and some habitat attraction.
+  Ties break in stat order (CUL → SOC).
 
-  Glow                                None to strong; can affect
-                                      appearance and certain magical
-                                      jobs.
+  | Highest stat | Affinity |
+  |---|---|
+  | Cultivation | Bloom |
+  | Mycology | Spore |
+  | Foraging | Verdant |
+  | Construction | Hearth |
+  | Magic | Glow |
+  | Animal Care | Kin |
+  | Local Discovery | Burrow |
+  | Social Craft | Shimmer |
 
-  Affinity                            Primary ecological leaning such as
-                                      Bloom, Spore, Glow, Spirit,
-                                      Verdant, or Shimmer. These are
-                                      thematic examples and can be
-                                      renamed.
+- **Genetic Rarity tier** (Section 6.6).
 
-  Work traits                         Specific bonuses or special
-                                      behaviors, such as Efficient
-                                      Waterer or Curious Forager.
+### 6.4 Attribute rarity tiers
 
-  Temperament                         Behavioral modifier such as
-                                      Industrious, Curious, Sleepy,
-                                      Social, Greedy, Gentle,
-                                      Mischievous, or Stubborn.
+Every ordinary attribute has a tier: **Basic**, **Uncommon**, or
+**Rare**.
 
-  Rarity                              Affects the probability of unusual
-                                      genes, trait count, and visual
-                                      effects; rarity must not make
-                                      common mushrooms obsolete.
+- The starting gene pool contains **Basic** attributes only.
+- **Uncommon** attributes enter through Wild Visitors, attribute
+  variation during breeding, and friend donors.
+- **Rare** attributes enter through attribute variation once a rare
+  habitat has been discovered, and through friend donors.
+- **Tier never changes an attribute's stat budget** (Section 7.2).
+  Rare attributes are rarer, more striking visually, and sometimes more
+  focused in distribution, but never strictly stronger. This keeps
+  common mushrooms useful.
 
-  Stats                               Numeric job capabilities. Use a
-                                      clear bounded scale (recommended
-                                      0--100) and tune through
-                                      playtesting.
-  -----------------------------------------------------------------------
+### 6.5 Temperament
 
-### 6.3 Personality and behavior
+Temperament is inherited (Config: `temperamentInheritance`, default 45%
+parent A / 45% parent B / 10% random). Effects are small and must never
+make a mushroom unusable.
 
--   **Industrious:** shorter work cycle or more consistent output.
--   **Curious:** small chance to discover bonus items during suitable
-    tasks.
--   **Sleepy:** works less often but may gain a rested bonus after
-    downtime.
--   **Social:** gains a modest bonus near compatible mushrooms or
-    friends.
--   **Greedy:** gathers extra personal finds but contributes less to
-    shared group bonuses.
--   **Mischievous:** small chance of unexpected outcomes or mutations in
-    compatible tasks.
--   **Gentle:** improves nearby plants or animal comfort.
--   **Stubborn:** excels in its assigned specialty but has a penalty
-    when frequently reassigned.
+- **Industrious:** −10% work cycle duration.
+- **Curious:** small chance (3%) of a bonus item during suitable tasks.
+- **Sleepy:** works 15% less often; gains a +15% rested bonus for the
+  next cycle after resting.
+- **Social:** +5% productivity within 2 tiles of another working
+  mushroom.
+- **Greedy:** +8% personal bonus finds; contributes 50% less to shared
+  synergy bonuses.
+- **Mischievous:** in breeding, +25% relative chance of ordinary
+  attribute variation when this mushroom is a parent; occasional harmless
+  surprise outcomes at work.
+- **Gentle:** improves nearby plant growth or visitor comfort by 5%.
+- **Stubborn:** +8% productivity in a job held for at least one forest
+  day; the bonus resets on reassignment (no penalty below baseline).
 
-Personality should add charm and small strategic differences, not punish
-players or make a beloved mushroom unusable.
+Temperament modifiers count toward the productivity bonus cap
+(Section 11.3). All values are Config.
 
-## 7. Jobs and Forest Work
+### 6.6 Genetic Rarity (supersedes v0.1 "Rarity" attribute)
+
+Rarity is a **derived, descriptive score**, not an input that changes
+probabilities. It makes valuable mushrooms readable at a glance.
+
+| Source | Points |
+|---|---|
+| Each Uncommon attribute | 1 |
+| Each Rare attribute | 3 |
+| Each Advanced Trait | 1 |
+| Each Perk level | 1 |
+| Mutation | 8 |
+
+| Tier | Score |
+|---|---|
+| Common | 0–2 |
+| Uncommon | 3–6 |
+| Rare | 7–12 |
+| Epic | 13–19 |
+| Legendary | 20+ |
+
+Starters always score 0 (Common). Point values and thresholds are
+Config. Rarity is shown through palettes, glow, particles, and frames,
+not only a coloured label.
+
+### 6.7 Starting mushrooms
+
+Every new player receives **exactly three** randomized mushrooms.
+
+**Hard rules**
+
+- Ordinary attributes are drawn **only from Basic-tier** attributes.
+- Colour RGB is drawn from the Basic starter palette (Section 7.4.5).
+- No Advanced Traits, no Perks, no Mutation.
+- Generation 1, no parents, origin "Starter".
+- Every ordinary mushroom has the same base stat total (66; Section
+  7.2), so random luck cannot produce an exceptionally powerful starter.
+- No single starter stat may exceed Config: `starterMaxStat`
+  (default 28).
+
+**Complementary generation**
+
+Starters are generated by seeded rejection sampling until all
+constraints pass (Config: `starterMaxAttempts`, default 500, then fall
+back to a curated, valid starter set):
+
+1. Each starter is assigned a different dominant colour group (one
+   Red-leaning, one Green-leaning, one Blue-leaning).
+2. All three cap shapes are different.
+3. At least one starter has Cultivation among its top two stats and at
+   least one other starter has Foraging among its top two stats, so both
+   starting jobs (Gardener, Forager) have a natural fit.
+4. The union of the three starters' top-two stats covers at least five
+   of the eight stats.
+5. Temperaments are all different.
+
+Players can breed any two of their three starters. Breeding never
+consumes parents; both remain permanently in the collection.
+
+### 6.8 Population and storage
+
+- **Residents** live and work in the forest. Resident capacity starts at
+  Config: `baseResidentCap` (default 8) and each Mushroom Home adds
+  Config: `homeCapacity` (default 2).
+- When residents are at capacity, new offspring go to the **Spore
+  Archive**: unlimited dormant storage. Archived mushrooms cannot work
+  but can be viewed, bred, exported, and moved back to residency when
+  space allows.
+- A mushroom is never removed automatically. Optional "Return to the
+  Wild" release requires a two-step confirmation and is excluded from
+  the MVP unless approved (decision D-8).
+
+---
+
+## 7. Job Stats and Stat Calculation
+
+### 7.1 The eight job stats
+
+| # | Stat | Colour group | Governs |
+|---|---|---|---|
+| 1 | Cultivation | Red | Growing plants, tending gardens, watering, harvesting crops. |
+| 2 | Mycology | Red | Cultivating fungi, spreading spores, producing fungal materials. |
+| 3 | Foraging | Red | Gathering berries, wood, dew, and natural materials. |
+| 4 | Construction | Green | Building, repairing, crafting, and improving structures. |
+| 5 | Magic | Green | Maintaining landmarks, gathering magical energy, enchanting. |
+| 6 | Animal Care | Green | Tending creatures, nests, habitats, and wildlife. |
+| 7 | Local Discovery | Blue | Digging, investigating, finding buried and hidden things. |
+| 8 | Social Craft | Blue | Gifts, decorations, community projects, festival materials. |
+
+Each stat uses a bounded 0–100 scale (Config: `statCap`, default 100).
+Each job has one primary stat and may have one secondary stat
+(Section 11.1).
+
+### 7.2 Ordinary attributes determine base stats
+
+Every ordinary attribute contributes a **predefined, fixed** stat
+distribution. The same attribute always contributes the same
+distribution on every mushroom, in every save, forever (for a given
+configuration version).
+
+Each attribute **category** has a fixed point budget, and every
+attribute in a category spends exactly that budget:
+
+| Category | Budget | Notes |
+|---|---|---|
+| Cap shape | 18 | Largest single influence on silhouette and profile. |
+| Cap colour | 12 | Distributed by RGB (Section 7.4). |
+| Stem | 12 | |
+| Markings | 10 | "Plain" is a full attribute with its own distribution. |
+| Gills / underside | 8 | |
+| Ordinary glow | 6 | "None" is a full attribute with its own distribution. |
+| **Total base** | **66** | Identical for every ordinary mushroom. |
+
+Consequences:
+
+- Ordinary mushrooms differ in **shape** of their stat profile, never in
+  total base power. Power growth comes only from Advanced Traits and
+  Mutations.
+- Adding a future attribute category means adding a new budget; existing
+  mushrooms gain that category through migration with a defined default
+  attribute.
+- Cosmetic genes (accent colour, stem colour, pattern seed) contribute
+  zero stats by design.
+
+**Base stat** for each stat = sum of that stat's contributions across
+all of the mushroom's ordinary attributes.
+
+### 7.3 Initial attribute contribution tables
+
+All values are Config. Unlisted stats are 0.
+
+**Cap shape (budget 18)**
+
+| Attribute | Tier | CUL | MYC | FOR | CON | MAG | ANI | DIS | SOC |
+|---|---|---|---|---|---|---|---|---|---|
+| Roundcap | Basic | 5 | 3 | | 10 | | | | |
+| Flatcap | Basic | | | 8 | 4 | | | | 6 |
+| Bellcap | Basic | 8 | | | | 4 | 6 | | |
+| Wavycap | Basic | | 8 | 4 | | | | 6 | |
+| Conecap | Basic | | 4 | | | 8 | | 6 | |
+| Clustercap | Basic | 4 | 6 | | | | | | 8 |
+| Shelfcap | Uncommon | | | 6 | 8 | | 4 | | |
+| Frillcap | Uncommon | 6 | | | | | 4 | | 8 |
+| Lanterncap | Rare | | | | | 10 | 3 | | 5 |
+| Spirecap | Rare | | | | | 8 | | 10 | |
+
+**Stem (budget 12)**
+
+| Attribute | Tier | CUL | MYC | FOR | CON | MAG | ANI | DIS | SOC |
+|---|---|---|---|---|---|---|---|---|---|
+| Sturdy | Basic | 2 | | 4 | 6 | | | | |
+| Slender | Basic | | | 6 | | 2 | | 4 | |
+| Bulbous | Basic | 2 | 6 | | | | 4 | | |
+| Rooted | Basic | 4 | 2 | | | | | 6 | |
+| Ringed | Uncommon | | | | 2 | | 4 | | 6 |
+| Twisted | Uncommon | | | | | 6 | | 2 | 4 |
+| Crystal-veined | Rare | | | | 5 | 7 | | | |
+
+**Markings (budget 10)**
+
+| Attribute | Tier | CUL | MYC | FOR | CON | MAG | ANI | DIS | SOC |
+|---|---|---|---|---|---|---|---|---|---|
+| Plain | Basic | 4 | | 3 | 3 | | | | |
+| Spots | Basic | | | 2 | | | 5 | | 3 |
+| Stripes | Basic | | | 2 | 5 | | | 3 | |
+| Speckles | Basic | 2 | 5 | | | | | 3 | |
+| Rings | Uncommon | | 3 | | | 5 | | | 2 |
+| Patches | Uncommon | 3 | | | | | 2 | | 5 |
+| Constellation | Rare | | | | | 6 | | 4 | |
+
+**Gills / underside (budget 8)**
+
+| Attribute | Tier | CUL | MYC | FOR | CON | MAG | ANI | DIS | SOC |
+|---|---|---|---|---|---|---|---|---|---|
+| Fine gills | Basic | 2 | 4 | | | | 2 | | |
+| Deep gills | Basic | | 5 | | | | | 3 | |
+| Pored | Basic | | | 4 | 4 | | | | |
+| Ridged | Uncommon | | | | 4 | 2 | | 2 | |
+| Toothed | Uncommon | | | 2 | | | | 4 | 2 |
+| Velvet | Rare | | | | | | 4 | | 4 |
+
+**Ordinary glow (budget 6)** — distinct from Mutation glow effects.
+
+| Attribute | Tier | CUL | MYC | FOR | CON | MAG | ANI | DIS | SOC |
+|---|---|---|---|---|---|---|---|---|---|
+| None | Basic | 2 | | 2 | 2 | | | | |
+| Faint | Basic | | | | | 3 | | | 3 |
+| Soft | Uncommon | | | | | 4 | 2 | | |
+| Pulse | Uncommon | | | | | 2 | | 4 | |
+| Radiant | Rare | | | | | 6 | | | |
+
+The Basic pool (6 × 4 × 4 × 3 × 2 shapes/stems/markings/gills/glows,
+times colour) far exceeds the MVP requirement of 12 visual combinations.
+
+### 7.4 Colour-based stat distribution
+
+Colour works differently from other attributes. Every colour contributes
+**exactly 12 points** (Config: `colorBudget`), regardless of brightness.
+Only the **primary cap colour** drives stats; accent and stem colours
+are cosmetic.
+
+#### 7.4.1 Colour groups
+
+| Channel | Stats |
+|---|---|
+| Red | Cultivation, Mycology, Foraging |
+| Green | Construction, Magic, Animal Care |
+| Blue | Local Discovery, Social Craft |
+
+#### 7.4.2 Step 1 — channel shares (group points)
+
+1. Read the cap colour as integers `R, G, B` in 0–255.
+2. If `R + G + B = 0`, use the neutral fallback `(1, 1, 1)`
+   (Config: `colorZeroFallback`), producing 4 / 4 / 4.
+3. Raw share for each channel = `channel / (R + G + B) × 12`.
+4. Convert to integers with the **largest-remainder method**: take the
+   floor of each share; distribute the remaining points one at a time to
+   the channels with the largest fractional remainders; break exact ties
+   in the order Red → Green → Blue.
+
+Because shares are normalized by the channel total, brightness does not
+matter: `(255, 0, 0)` and `(80, 0, 0)` are both pure red.
+
+| Colour | RGB | Red pts | Green pts | Blue pts |
+|---|---|---|---|---|
+| Pure red | 255, 0, 0 | 12 | 0 | 0 |
+| Yellow | 255, 255, 0 | 6 | 6 | 0 |
+| White | 255, 255, 255 | 4 | 4 | 4 |
+| Grey | 128, 128, 128 | 4 | 4 | 4 |
+| Amber | 255, 170, 0 | 7 | 5 | 0 |
+| Black (fallback) | 0, 0, 0 | 4 | 4 | 4 |
+
+*Amber check: shares 7.2 / 4.8 / 0 → floors 7 / 4 / 0 (11 points) →
+largest remainder (.8) goes to Green → 7 / 5 / 0.*
+
+#### 7.4.3 Step 2 — within-group allocation (colour allocation sub-gene)
+
+Each mushroom carries a **colour allocation sub-gene** with one entry per
+group. Each entry has:
+
+- **Template** — the weight shape:
+
+  | Template | 3-stat group weights | 2-stat group (Blue) weights |
+  |---|---|---|
+  | Focus | 1 : 0 : 0 | 1 : 0 |
+  | Lean | 2 : 1 : 0 | 2 : 1 |
+  | Even | 1 : 1 : 1 | 1 : 1 |
+
+- **Order** — a permutation of the group's stats, saying which stat
+  receives the first weight, which the second, and so on.
+
+Group points are split by the weights using the same largest-remainder
+method; exact ties go to the stat earlier in the order.
+
+Examples (matching the design brief):
+
+- **Yellow** (6 / 6 / 0) with Red = Lean [CUL, MYC, FOR] and Green =
+  Lean [CON, MAG, ANI] → CUL 4, MYC 2, FOR 0, CON 4, MAG 2, ANI 0,
+  DIS 0, SOC 0.
+- **White** (4 / 4 / 4) with Red = Focus [MYC, …], Green = Focus
+  [CON, …], Blue = Focus [SOC, DIS] → MYC 4, CON 4, SOC 4, all others 0.
+- **Even** with 4 points over three stats → 2 / 1 / 1 (tie to the first
+  in order).
+
+The sub-gene is stored in the genome and inherited (Section 9.4.2). The
+allocation is **purely a function of the stored RGB and sub-gene**: it is
+never re-rolled when stats are refreshed, recalculated, imported, or
+migrated.
+
+#### 7.4.4 Colour for collections
+
+For the Field Guide, each RGB value is mapped to its nearest **named
+colour family** (Config: `colorFamilies`, ~24 entries with lightness
+variants). Collection completion is tracked by family; the exact RGB is
+still shown on the detail screen.
+
+#### 7.4.5 Starter palette
+
+Starters draw their cap colour from a Basic palette (Config:
+`starterPalette`), for example Brick Red, Amber, Butter Yellow, Moss,
+Fern, Sky, Slate Blue, Plum, Cream, and Chestnut, with a small seeded
+jitter (±10 per channel). Unusual colours (Ghost White, Midnight,
+Iridescent families) arise only through breeding.
+
+### 7.5 Final stat calculation
+
+```
+Final Stat = min( statCap,
+                  Ordinary Attribute Contributions
+                + Advanced Trait Bonuses
+                + Mutation Bonuses )
+```
+
+- Perks are **not** included. Perks modify productivity, chances, and
+  behaviours at work time (Section 11.3).
+- Temperament is not included.
+- Caps are enforced in game logic (the stat calculator), never only in
+  the UI.
+- When an uncapped total exceeds 100, the excess is recorded as
+  **overflow** and shown on the detail screen ("Construction 100
+  (+6 capped)"), so players understand why a bonus had no further effect.
+
+### 7.6 Worked example
+
+"Bramble": Roundcap, Sturdy stem, Spots, Pored gills, No glow, Amber cap
+(255, 170, 0), colour allocation Red = Lean [CUL, MYC, FOR], Green =
+Focus [CON, MAG, ANI].
+
+Colour: Red 7 → Lean → 4.67 / 2.33 / 0 → 5 / 2 / 0; Green 5 → Focus →
+CON 5.
+
+| Source | CUL | MYC | FOR | CON | MAG | ANI | DIS | SOC | Total |
+|---|---|---|---|---|---|---|---|---|---|
+| Roundcap | 5 | 3 | | 10 | | | | | 18 |
+| Sturdy | 2 | | 4 | 6 | | | | | 12 |
+| Spots | | | 2 | | | 5 | | 3 | 10 |
+| Pored | | | 4 | 4 | | | | | 8 |
+| No glow | 2 | | 2 | 2 | | | | | 6 |
+| Amber | 5 | 2 | | 5 | | | | | 12 |
+| **Base** | **14** | **5** | **12** | **27** | **0** | **5** | **0** | **3** | **66** |
+
+Bramble is a Hearth (Construction) mushroom. Two inherited Construction
+traits (+8) would raise Construction to 35.
+
+### 7.7 Balance envelope
+
+With the initial tables:
+
+- Every ordinary mushroom: base total 66; typical single stats 0–28;
+  the theoretical maximum single base stat is roughly 40.
+- Advanced Traits: up to 8 × 4 = +32.
+- Mutation: up to +18 on one stat.
+- A deeply line-bred specialist can therefore approach 90+ in one stat,
+  while remaining weak elsewhere.
+
+This makes the 100 cap meaningful only at the extreme end and makes
+specialization, not universal power, the outcome of long-term breeding.
+
+---
+
+## 8. Genetic Progression Layers
+
+### 8.1 Advanced Traits
+
+Advanced Traits are permanent, inheritable genetic bonuses introduced
+through breeding.
+
+**Effect:** each Advanced Trait grants exactly **+4** (Config:
+`advancedTraitBonus`) to one job stat.
+
+**Rules**
+
+- Starters cannot have Advanced Traits.
+- Each breeding can introduce **at most one** new Advanced Trait.
+- A new trait targets one stat chosen uniformly at random
+  (Config: `advancedTraitStatWeighting`, default uniform) from **eligible
+  stats**: stats where the offspring's current value (ordinary
+  attributes + already-inherited traits) + 4 ≤ the stat cap. If no stat
+  is eligible, no new trait is created.
+- Traits are inherited by later generations (Section 9.4.3).
+- Maximum Config: `maxAdvancedTraits` (default 8) trait entries per
+  mushroom. Multiple traits may target the same stat; that is how
+  specialists are built.
+- An inherited trait always keeps its original stat. If, in a new
+  mushroom, it would push the stat above 100, the stat is clamped and the
+  overflow recorded (Section 7.5). Traits are never silently retargeted.
+
+**Trait record**
+
+| Field | Purpose |
+|---|---|
+| `traitUid` | Globally unique ID created when the trait first appears. Shared by all descendants who inherit it. |
+| `stat` | Affected stat. |
+| `bonus` | +4 (stored for audit; validated against config on load/import). |
+| `originMushroomId`, `originName`, `originGeneration` | Mushroom in which the trait first appeared. |
+| `originForestId` | Forest (local player ID) where it appeared; preserved through sharing. |
+| `originBreedingId` | Breeding record that created it. |
+
+Traits are displayed with flavourful stat-based names (e.g. "Deep Roots
+— +4 Cultivation"), plus "First appeared in Bramble, Gen 2".
+
+**Intended progression**
+
+- Generation 1: ordinary mushroom.
+- Generation 2: inherits nothing, gains +4 Cultivation.
+- Generation 3: inherits +4 Cultivation and gains +4 Mycology.
+- Generation 4: inherits some of those and may develop another.
+
+Because each parental trait is only *probably* inherited, progress
+requires selection: players keep the best offspring and breed them
+onward.
+
+### 8.2 Perks
+
+Perks provide conditional bonuses, productivity increases, and special
+behaviours. They never change stats and never make a mushroom
+universally better.
+
+**Rules**
+
+- Maximum **3** Perks per mushroom (Config: `maxPerks`).
+- Starters have no Perks.
+- Perks are inherited from either parent (Section 9.4.4).
+- Breeding has a chance to introduce one new Perk at level 1 if the
+  offspring has a free slot and the Perk system is unlocked.
+- Matching Perks inherited from both parents combine according to that
+  Perk's **combination rule**. Percentages are never simply added.
+- Each Perk has discrete strength **levels** with an individual maximum.
+- A mushroom cannot hold two copies of the same Perk.
+
+**Combination rules**
+
+| Rule | Both parents, equal level L | Both parents, unequal levels | One parent only |
+|---|---|---|---|
+| `standard` | L + 1 (guaranteed) | max level; 25% chance of +1 | same level |
+| `slow` | L + 1 at 40% chance, else L | max level | same level |
+| `fixed` | single strength; no levels | — | — |
+
+Results never exceed the Perk's max level. Rule chances are Config.
+
+*Example:* two parents each have Rain Worker L1 (+3%). Rain Worker uses
+`standard`, so an offspring that inherits it gets L2 (+5%).
+
+**Initial Perk catalogue** (all values Config)
+
+| Perk | Condition / effect | Levels | Rule | Related stat |
+|---|---|---|---|---|
+| Rain Worker | +productivity while raining | 3 / 5 / 7 / 9 / 12% | standard | any |
+| Morning Dew | chance of +1 dew per cycle at Dawn | 5 / 8 / 11 / 15% | standard | FOR |
+| Treasure Nose | +bonus-find chance while digging | 4 / 6 / 8 / 10 / 13% | slow | DIS |
+| Night Shift | +productivity at Night | 4 / 6 / 8 / 10 / 12% | standard | any |
+| Early Riser | +productivity at Dawn | 5 / 8 / 11 / 14 / 18% | standard | any |
+| Green Thumb | +plant growth speed / harvest output in Cultivation jobs | 5 / 8 / 11 / 14% | standard | CUL |
+| Spore Sower | chance to spread an extra fungal patch per cycle | 3 / 5 / 7 / 9% | standard | MYC |
+| Team Player | +productivity when another mushroom works within 2 tiles | 3 / 5 / 7 / 10% | standard | SOC |
+| Careful Builder | chance to conserve construction materials | 5 / 8 / 11 / 15% | slow | CON |
+| Moon Listener | chance of moonlight drop during Night Magic work | 4 / 6 / 9 / 12% | standard | MAG |
+| Gentle Keeper | +visitor happiness from Animal Care work | 5 / 8 / 11 / 15% | standard | ANI |
+| Gift Wrapper | chance of an extra gift item | 5 / 8 / 12% | slow | SOC |
+
+The v0.1 perk example "Dew Collector" is renamed **Morning Dew** to avoid
+clashing with the Dew Collector job.
+
+**Perk record:** `perkId`, `level`, `originMushroomId`,
+`originGeneration`, `originForestId`.
+
+**New-Perk selection:** new Perks are drawn from the catalogue, weighted
+toward Perks whose related stat is among the offspring's top two stats
+(Config: `newPerkAffinityWeight`, default 60% from related Perks,
+40% from all). "any" Perks count as related to every stat.
+
+### 8.3 Mutations
+
+Mutations are extremely rare genetic developments and the most exciting
+breeding discoveries. Each has:
+
+1. A distinctive **visual effect** (dedicated layered assets, particles,
+   and idle/working animation variants).
+2. A substantial **gameplay bonus**: stat bonuses (subject to the 100 cap)
+   and/or special effects (subject to the productivity bonus cap).
+
+**Rules**
+
+- Maximum **one** Mutation per mushroom.
+- Starters cannot have Mutations.
+- Mutations can be inherited from mutated parents.
+- Mutations can appear spontaneously at very low probability, only when
+  no parental Mutation was inherited and the Mutation system is unlocked.
+- Two mutated parents still produce at most one Mutation.
+
+**Initial Mutation catalogue** (values Config)
+
+| Mutation | Stat bonus | Special effect | Visual |
+|---|---|---|---|
+| Starfall Aura | +18 Magic | 5% chance to find stardust per Night work cycle | Star-like particles and slow starfall around the mushroom |
+| Verdant Glow | +18 Cultivation | +10% productivity on plant-tending jobs | Green glowing outline, leaf motes |
+| Deep-Spore Bloom | +18 Mycology | +15% chance of rare spores | Floating purple spores |
+| Prismatic Veil | +5 to each of the carrier's four lowest base stats | — | Multicoloured shimmering outline |
+
+*Prismatic Veil targets are determined when each carrier is created
+(ties broken in stat order) and stored in that mushroom's Mutation
+instance, so they never change afterwards.*
+
+Future Mutation examples: Firefly Halo (+14 Animal Care, +4 Social Craft,
+orbiting fireflies), Moss Crown, Ember Cap, Constellation Veil.
+
+**Mutation record:** `mutationId`, `resolvedBonuses` (stat → amount),
+`origin` (`spontaneous` or `inherited`), `originMushroomId`,
+`originGeneration`, `originForestId`.
+
+**Spontaneous Mutation selection:** weighted by Config:
+`mutationWeights`; habitat modifiers MAY raise weights (e.g. Starfall
+Aura ×2 if the Breeding Station is next to the Moonstone Ring). Weights
+only choose *which* Mutation appears, never *whether* one appears.
+
+---
+
+## 9. Breeding and Genetics
+
+### 9.1 Breeding flow
+
+1. Open the Breeding Station and select two eligible parents.
+2. Review both parents side by side and see inheritance categories and
+   hints, without the exact offspring.
+3. Pay the breeding cost and start incubation. The complete offspring is
+   resolved and sealed at this moment (Section 9.6).
+4. A visible spore cluster incubates at the station in real time,
+   including offline time.
+5. When ready, the player claims it; a short reveal animation plays.
+6. The offspring joins the collection (residents or Archive) with a
+   unique identity and full lineage.
+
+### 9.2 Eligibility
+
+- Both parents must be distinct individuals.
+- At least one parent must be an owned mushroom; the other may be owned,
+  a Guest, or a present Wild Visitor.
+- A mushroom can be a parent in only one active incubation at a time.
+- After breeding, a parent rests for Config: `parentRestMinutes`
+  (default 10). Parents keep working while incubation runs.
+- Newly revealed offspring can be bred after Config:
+  `offspringMaturationMinutes` (default 0 for the MVP).
+- Concurrent incubations are limited by Breeding Station slots (Section
+  10.2).
+- Eligibility and timers are always shown clearly; ineligible mushrooms
+  say why.
+
+### 9.3 Generation
+
+Offspring generation = `max(parentA.generation, parentB.generation) + 1`.
+Starters, Wild Visitors, and imported mushrooms keep the generation they
+arrived with (Wild Visitors are generation 1).
+
+### 9.4 Breeding resolution sequence
+
+The offspring is produced by this exact, ordered sequence. Each step
+draws from its own seeded RNG sub-stream (Section 9.6).
+
+1. **Ordinary attributes:** inherit each category from either parent,
+   with controlled variation (9.4.1–9.4.2).
+2. **Base stats:** calculate ordinary base stats (Section 7).
+3. **Inherit Advanced Traits:** a controlled subset of parental traits
+   (9.4.3).
+4. **New Advanced Trait:** roll for at most one new trait among eligible
+   stats.
+5. **Inherit Perks:** select eligible parental Perks (9.4.4).
+6. **Combine duplicate Perks:** apply each Perk's combination rule.
+7. **New Perk:** roll if a slot is free.
+8. **Parental Mutation:** resolve inheritance (9.4.5).
+9. **Spontaneous Mutation:** only if no parental Mutation was inherited.
+10. **Validate:** enforce stat caps, trait limit, perk limit, mutation
+    limit, and schema rules; record overflow. If any limit is exceeded,
+    trim deterministically (lowest-priority entries first) and log a
+    developer warning — this indicates a bug.
+11. **Save:** persist the sealed offspring and its complete lineage in
+    the breeding record.
+12. **Reveal:** on claim, add the offspring to the collection and play
+    the reveal.
+
+Steps 3–9 are skipped (producing nothing) for any system that is not yet
+unlocked (Section 10), except dormant carry from donors (Section 10.3).
+
+### 9.4.1 Ordinary attribute inheritance
+
+For each attribute category:
+
+- Choose parent A's or parent B's attribute (Config:
+  `attributeParentWeight`, default 50 / 50).
+- **Attribute variation** (Config: `attributeVariationChance`, default
+  6%; ×1.25 if a parent is Mischievous): replace the chosen attribute
+  with a related attribute from its data-defined **variation neighbours**
+  (e.g. Roundcap ↔ Bellcap ↔ Conecap). Variation may produce an
+  attribute not visibly present in either parent.
+- Variation can select Uncommon neighbours at any time, and Rare
+  neighbours only once a rare habitat has been discovered
+  (Config: `rareVariationShare`, default 20% of variations when allowed).
+- Config: `firstBreedVariationEnabled` (default false) keeps the very
+  first breeding a clean lesson in parent mixing.
+
+This "attribute variation" replaces v0.1's use of the word "mutation" for
+new visual genes (Appendix A).
+
+### 9.4.2 Colour inheritance
+
+- **RGB:** `child = lerp(A, B, t)` per channel with seeded
+  `t ∈ [0.3, 0.7]`, plus seeded jitter of ±12 per channel, clamped to
+  0–255 (Config: `colorBlendRange`, `colorJitter`).
+- **Colour variation** (same chance as attribute variation): a seeded hue
+  shift of up to ±30° (Config: `colorVariationHueShift`).
+- **Allocation sub-gene:** each group's template and order are inherited
+  from either parent (50 / 50); variation may change the template or
+  swap two stats in the order.
+- Accent and stem colours blend the same way (cosmetic only).
+
+Blending yellow (255, 255, 0) with blue (0, 0, 255) gives roughly grey,
+and therefore an even 4 / 4 / 4 colour budget — intuitive for players.
+
+### 9.4.3 Advanced Trait inheritance
+
+- Pool the parents' traits by `traitUid`.
+- A trait carried by one parent is inherited with Config:
+  `traitInheritChanceSingle` (default 50%).
+- A trait carried by both parents (shared ancestry) is inherited once,
+  with Config: `traitInheritChanceShared` (default 75%).
+- If more than the trait cap would be inherited, keep a seeded selection,
+  preferring shared traits.
+- Then roll for one new trait (Config: `newAdvancedTraitChance`, default
+  25%), only if the offspring has a free trait slot.
+- Config: `tutorialGuaranteedFirstTrait` (default true): the first
+  breeding after Advanced Traits unlock always produces one new trait, to
+  teach the system.
+
+### 9.4.4 Perk inheritance
+
+- Pool parental Perks by `perkId`.
+- A Perk carried by both parents is inherited with Config:
+  `perkInheritChanceShared` (default 90%) and then combined (Section
+  8.2).
+- A Perk carried by one parent is inherited with Config:
+  `perkInheritChanceSingle` (default 50%) at the same level.
+- If more than three would be inherited, keep in priority order: combined
+  (shared) Perks, then higher level, then seeded random.
+- If a slot is free, roll for a new Perk (Config: `newPerkChance`,
+  default 8%).
+
+### 9.4.5 Mutation inheritance
+
+- **One mutated parent:** inherit that Mutation with Config:
+  `mutationInheritChanceSingle` (default 35%).
+- **Two mutated parents:** one Mutation is inherited with Config:
+  `mutationInheritChanceBoth` (default 60%). If both parents carry the
+  same Mutation, that one is inherited; otherwise the choice is a seeded
+  50 / 50. Never both.
+- **No parental Mutation inherited** (including when parents had none,
+  or the inheritance roll failed): roll spontaneous Mutation with Config:
+  `spontaneousMutationChance` (default 0.75%).
+- Inherited Mutations re-resolve carrier-dependent bonuses (e.g.
+  Prismatic Veil's four lowest stats) for the new carrier.
+
+### 9.5 Probability summary (initial test values)
+
+| Roll | Default | Brief range |
+|---|---|---|
+| Attribute variation per category | 6% | — |
+| New Advanced Trait | 25% | 20–30% |
+| Trait inherited (one parent / both) | 50% / 75% | — |
+| New Perk (slot available) | 8% | 5–10% |
+| Perk inherited (one parent / both) | 50% / 90% | — |
+| Mutation inherited (one / both parents) | 35% / 60% | — |
+| Spontaneous Mutation | 0.75% | 0.5–1% |
+
+All are independent Config values. Offspring never automatically inherit
+every bonus from both parents.
+
+### 9.6 Determinism and sealing
+
+- At incubation start, the game derives an **outcome seed**:
+  `hash(save.rngRoot, save.breedingCounter, parentA.uid, parentB.uid)`,
+  increments `breedingCounter`, and stores both in the breeding record.
+- The full offspring is resolved immediately and **sealed** in the
+  breeding record, together with `configVersion`. A later game update
+  cannot change a sealed result.
+- Each resolution step uses a sub-stream `hash(outcomeSeed, stepName)`,
+  so adding a step in future does not shift other steps' results.
+- Refreshing, closing, or changing the device clock cannot change the
+  offspring. The reveal animation only displays the sealed result.
+- Incubations cannot be cancelled in the MVP (prevents cancel-and-retry
+  rerolls).
+- Because the seed chain is part of the save, restoring an older save
+  backup and breeding the same pair again yields the same offspring.
+
+### 9.7 Breeding cost
+
+Breeding costs a small amount of resources (Config: `breedingCost`,
+default 3 berries + 2 leaves; spores are added after the First Fungal
+Patch). The first three breedings are free (Config:
+`freeBreedingCount`) so the first-session loop stays fast. Costs are
+deducted in the same save transaction that creates the breeding record.
+
+### 9.8 Breeding goals
+
+- Complete cap-shape, colour-family, marking, stem, gill, and glow
+  collections.
+- Discover every Advanced Trait stat, every Perk, and every Mutation.
+- Raise a Perk to its maximum level.
+- Breed a mushroom with a particular attribute/Perk/Mutation combination.
+- Develop a lineage with high performance in a chosen job.
+- Breed a Legendary-rarity mushroom.
+
+### 9.9 Preventing breeding frustration
+
+- Never consume or permanently remove parents.
+- Provide clear eligibility, cost, and timer information.
+- Avoid a single best pairing: equal base totals, multiple valid
+  specialist paths, and job diversity keep many pairings useful.
+- Every offspring is useful: new appearance combinations, collection
+  progress, lineage progress, or a different stat shape.
+- Show the parent-versus-offspring comparison after every reveal.
+
+---
+
+## 10. Breeding Progression and Unlocks
+
+Breeding mechanics are introduced gradually. Each stage has a Field
+Guide entry and a brief tutorial (Section 16).
+
+### 10.1 Unlock stages
+
+| Stage | Trigger (Config) | Introduces |
+|---|---|---|
+| First Breed | Available from the start (Breeding Nook in the Starting Clearing). | Ordinary attribute inheritance, parent/offspring comparison, lineage records. |
+| Early Breeding Milestone | 2 completed breedings. | Advanced Traits: offspring can develop permanent +4 stat bonuses. First trait guaranteed (Section 9.4.3). |
+| Breeding Workstation Upgrade | Upgrade Breeding Nook → **Spore Cradle** (requires Woodland Workshop; costs planks + spores). | Perks: conditional productivity bonuses. +1 incubation slot. |
+| Rare Habitat or Special Milestone | Discover the **Moonstone Ring** rare habitat (found by Excavator or Night Watcher in the Root Hollow) **or** own a Generation 5 mushroom, whichever comes first. | Mutations: rare visual and gameplay transformations. Also enables Rare-tier attribute variation. |
+| Later Generations | Own a Generation 6 mushroom and craft the **Spore Lens**. | Breeding insight tools (10.4). |
+
+### 10.2 Breeding Station upgrades
+
+| Station | Slots | Incubation time | Unlocks |
+|---|---|---|---|
+| Breeding Nook | 1 | Config: `incubationMinutes` (default 3 for testing) | Breeding, then Advanced Traits |
+| Spore Cradle | 2 | −10% | Perks |
+| Moonlit Cradle (later) | 3 | −25% | Mutation weight bonuses near magical habitats |
+
+### 10.3 Locked systems and donor genetics (dormant carry)
+
+Before a system is unlocked, no new entries of that kind are rolled.
+If a Guest donor carries genetics from a locked system (e.g. a friend's
+Perk before the player has the Spore Cradle):
+
+- Inheritance rolls still happen normally and the offspring may carry
+  the genetics.
+- Carried entries are **dormant**: they have no gameplay effect and are
+  shown as "Dormant — unlocks with the Spore Cradle".
+- Dormant entries activate permanently when the system unlocks.
+
+This keeps donors valuable for new players and creates a motivation to
+progress, without granting immediate power (decision D-4).
+
+### 10.4 Breeding insight tools
+
+Insight tools give information and limited influence. They must never
+guarantee a powerful offspring.
+
+- **Spore Lens** (permanent): shows probability bands for a selected
+  pair, e.g. "Cap shape: Roundcap ~47% / Bellcap ~47% / variation ~6%",
+  per-trait and per-Perk inheritance odds, and whether a spontaneous
+  Mutation roll is possible.
+- **Lineage Loom** (permanent): extended family tree and ancestor search
+  for traits, Perks, and Mutations.
+- **Affinity Tincture** (consumable, crafted with glow dust and gifts):
+  for one breeding, *if* a new Advanced Trait appears, there is a 50%
+  chance it is drawn from a chosen colour group. It does not raise the
+  chance of a trait appearing.
+- **Steady Spores** (consumable): raises one chosen parental Perk's
+  single-parent inheritance chance to 80% for one breeding.
+
+---
+
+## 11. Jobs and Forest Work
 
 Mushrooms work within the player's forest. There are no away-team
-expeditions, combat missions, or creature-loss missions. Jobs should
-have visible world interactions and produce resources, improve nearby
+expeditions, combat missions, or creature-loss missions. Jobs have
+visible world interactions and produce resources, improve nearby
 objects, or unlock discoveries.
 
-  -----------------------------------------------------------------------
-  Job family              Example jobs            Outputs / effects
-  ----------------------- ----------------------- -----------------------
-  Cultivation             Gardener, Waterer,      Plant growth, flower
-                          Fertilizer, Pollinator, yields, seed
-                          Pruner                  production, hybrid
-                                                  flower chances, soil
-                                                  improvement.
+### 11.1 Job catalogue (initial)
 
-  Foraging                Berry Picker, Nut       Berries, seeds, nuts,
-                          Gatherer, Wood          twigs, bark, stones,
-                          Gatherer, Stone         minerals, dew.
-                          Collector, Dew          
-                          Collector               
+| Job | Family | Primary | Secondary | Unlock area | Workstation | Output / effect |
+|---|---|---|---|---|---|---|
+| Gardener | Cultivation | CUL | ANI | Starting Clearing | Garden Bed | Berries, flowers, seeds; plant growth |
+| Forager | Foraging | FOR | DIS | Starting Clearing | Wild plants / leaf litter | Twigs, leaves, nuts, small stones |
+| Mycologist (Spore Cultivator) | Mycology | MYC | CUL | First Fungal Patch | Spore Bed | Spores, compost, new fungal patches |
+| Woodworker | Construction | CON | FOR | Woodland Workshop | Workbench | Planks, bark strips (from twigs/bark) |
+| Builder | Construction | CON | SOC | Woodland Workshop | Building Site | Advances structure and restoration projects |
+| Dew Collector | Foraging | FOR | MAG | Pond or Creek | Dew Reeds | Dew |
+| Waterer | Cultivation | CUL | ANI | Pond or Creek | Water Barrel | Faster plant growth within radius |
+| Nest Tender | Animal care | ANI | CUL | Pond or Creek | Reed Nest | Feathers, visitor happiness, egg-warming bonuses |
+| Excavator (Root Digger) | Local discovery | DIS | CON | Root Hollow | Dig Site | Roots, clay, buried objects, geodes, rare habitat hints |
+| Night Watcher | Local discovery | DIS | MAG | Root Hollow | Lookout Stump | Nocturnal finds, rare habitat discovery (works at Night/Dusk) |
+| Enchanter | Magic | MAG | SOC | Enchanted Landmark | Shrine | Glow dust, enchanted plants/objects |
+| Spirit Keeper | Magic | MAG | ANI | Enchanted Landmark | Moonlit Grove | Spirit dew, rare visitors |
+| Festival Helper | Social craft | SOC | CON | Community Clearing | Gathering Circle | Decorations, festival goods, community projects |
+| Gift Maker | Social craft | SOC | MAG | Community Clearing | Gift Table | Gifts and charms (used for insight consumables and decorations) |
 
-  Mycology                Spore Cultivator,       Spores, compost, fungal
-                          Mycelium Weaver,        patches, network links,
-                          Decomposer, Spore       discoveries.
-                          Harvester, Fungal       
-                          Researcher              
+Further v0.1 job ideas (Pollinator, Pruner, Decomposer, Mycelium Weaver,
+Stoneworker, Weaver, Landscaper, Moonlight Gatherer, Crystal Resonator,
+Forest Healer, Insect Keeper, Egg Warmer, Creek Searcher, Burrow
+Investigator, Message Carrier, Spore Trader) remain in the content
+backlog and use the same primary/secondary stat model.
 
-  Construction            Woodworker,             Structures, furniture,
-                          Stoneworker, Weaver,    paths, nests, bridges,
-                          Builder, Landscaper     habitat improvements.
+### 11.2 Job assignment
 
-  Magic                   Enchanter, Moonlight    Magical materials,
-                          Gatherer, Crystal       enchanted plants, rare
-                          Resonator, Forest       visitors, landmark
-                          Healer, Spirit Keeper   effects.
+- One primary job per mushroom in the MVP.
+- The player assigns a mushroom to an unlocked job and, where relevant, a
+  target area, workstation, or habitat. Workstations have worker slots.
+- Guests, Wild Visitors, and archived mushrooms cannot be assigned.
+- Before confirming, show the job score, an estimated output per hour,
+  and a qualitative label (Struggling / Steady / Skilled / Expert /
+  Master), plus which Perks apply.
+- Reassignment never loses the mushroom or its genetics; no harsh
+  cooldowns (Stubborn only loses its *bonus*).
 
-  Animal care             Nest Tender, Insect     Animal habitats, insect
-                          Keeper, Egg Warmer,     colonies, incubation
-                          Animal Feeder, Creature bonuses, visitor
-                          Caretaker               happiness.
+### 11.3 Job effectiveness
 
-  Local discovery         Root Digger, Hollow     Hidden objects,
-                          Searcher, Creek         underground materials,
-                          Searcher, Burrow        local discoveries,
-                          Investigator, Night     nocturnal finds.
-                          Watcher                 
+```
+JobScore       = 0.7 × Primary + 0.3 × Secondary        (Primary only if no secondary)
+Effectiveness  = 0.5 + 1.5 × (JobScore / 100)           (0.5× at 0, 2.0× at 100)
+BonusSum       = min(productivityBonusCap,
+                     Σ applicable Perk % + temperament % + Mutation effect % + synergy %)
+OutputPerCycle = BaseOutput × Effectiveness × (1 + BonusSum) × HabitatMultiplier
+```
 
-  Social craft            Gift Maker, Festival    Friend gifts, event
-                          Helper, Message         goods, social crafting,
-                          Carrier, Spore Trader   breeding materials.
-  -----------------------------------------------------------------------
+- Config: `jobScoreWeights` (0.7 / 0.3), `effectivenessCurve`,
+  `productivityBonusCap` (default +60%).
+- Chance-based effects (bonus finds, extra dew, material conservation)
+  roll per cycle using seed `hash(worldSeed, mushroomUid, jobId,
+  cycleIndex)`, so live and offline results are reproducible.
+- A starter with a job score of ~20 works at 0.8×; a line-bred
+  specialist at 80 works at 1.7×. Every mushroom contributes something,
+  but specialists are clearly better.
 
-### 7.1 Job assignment
+### 11.4 Job synergies
 
--   A mushroom can have one primary job at a time in the MVP.
--   The player assigns a mushroom to a job and, where relevant, a target
-    area, workstation, or habitat.
--   Job effectiveness is determined by relevant stats, affinity, work
-    traits, temperament, habitat suitability, and nearby synergies.
--   Show a clear estimated output or qualitative efficiency before
-    confirming an assignment.
--   Allow reassignment without losing the mushroom or its progress;
-    avoid harsh cooldowns in the initial version.
+Some jobs become more effective when complementary mushrooms work
+nearby, e.g. Waterer + Gardener on a flower bed, Mycologist near a
+Decomposer bed, Woodworker + Builder on a bridge project. Synergies add
+to `BonusSum`, are discoverable, and are explained in the Field Guide
+once found.
 
-### 7.2 Job synergies
+### 11.5 Visible work
 
-Some jobs should become more effective when complementary mushrooms work
-nearby. Example: a Waterer plus a Pollinator improves a flower patch; a
-Decomposer plus a Spore Cultivator accelerates a fungal bed; a
-Woodworker plus a Stoneworker can contribute to a bridge project.
-Synergies should be discoverable and explained once found.
+Use small looping animations and state changes: watering droplets,
+carrying a berry, digging at a root, scattering spores, hammering,
+glowing beside a landmark. Mutated mushrooms use their Mutation's
+idle/working variants. The simulation can be simplified visually, but
+the player must always be able to tell what each mushroom is doing.
 
-### 7.3 Visible work
+---
 
-Use small looping animations and state changes: watering can or
-droplets, carrying a berry, digging at a root, scattering spores,
-hammering a structure, or glowing beside a landmark. The simulation can
-be simplified visually, but the player should be able to tell what each
-mushroom is doing.
+## 12. Forest Development and Job Unlocks
 
-## 8. Breeding and Genetics
+Jobs become available through environmental discovery and forest
+expansion. Every job unlock follows three steps:
 
-### 8.1 Breeding flow
+1. **Discover** the relevant habitat, resource, or landmark.
+2. **Gather materials and construct or restore** its workstation.
+3. **Unlock** the job in the assignment interface.
 
-1.  Select two eligible parent mushrooms.
-2.  Review a preview of likely inherited categories, without revealing
-    the exact offspring.
-3.  Start a breeding cycle that creates a visible spore cluster or
-    mushroom egg/bulb.
-4.  Allow incubation to progress in real time, including offline time.
-5.  Reveal the offspring with a short, delightful hatch/reveal
-    animation.
-6.  Add the offspring to the collection with a unique identity and
-    recorded lineage.
+Jobs stay locked until both the discovery and the construction condition
+are met; this is enforced in game logic.
 
-### 8.2 Inheritance rules
+### 12.1 Development stages
 
--   Offspring inherit a mixture of visual genes from both parents;
-    inheritance should be weighted but not fully predictable.
--   Affinities and work traits can be inherited, recombined, or
-    occasionally skipped.
--   Rare mutations can introduce a gene not visibly present in either
-    parent. Keep mutation odds low enough that discoveries feel special.
--   Rarity should influence the chance of unusual combinations, not
-    guarantee a powerful offspring.
--   Allow common mushrooms to produce valuable specialist offspring
-    through thoughtful pairing.
--   Record both parents and generation number so players can follow
-    lineages.
+| Stage | Discovery trigger (initial) | Construct / restore | Unlocks |
+|---|---|---|---|
+| **Starting Clearing** | Available at start: garden beds, wild plants, leaf litter, Breeding Nook. | — | Gardener, Forager, Breeding |
+| **First Fungal Patch** | Foraging leaf litter reveals a damp fallen log (after Config: N forage cycles). | Restore Spore Bed (twigs + compost-starter) | Mycologist; spores enter breeding costs |
+| **Woodland Workshop** | Clearing a fallen-log path reveals an old workshop. | Restore Workbench (twigs + bark + stones) | Woodworker, Builder; Spore Cradle upgrade becomes buildable |
+| **Pond or Creek** | Builder repairs the creek path (requires planks). | Dew Reeds, Water Barrel, Reed Nest | Dew Collector, Waterer, Nest Tender |
+| **Root Hollow** | Found behind the workshop after a Builder project. | Dig Site, Lookout Stump | Excavator, Night Watcher; rare habitat discovery |
+| **Community Clearing** | Found by building a path from the clearing. | Gathering Circle, Gift Table, Mushroom Homes | Festival Helper, Gift Maker; extra resident capacity |
+| **Enchanted Landmark** | Requires two of {Pond, Root Hollow, Community} and glow traces found by Night Watcher. | Restore Shrine; grow Moonlit Grove | Enchanter, Spirit Keeper; Moonlit Cradle |
 
-### 8.3 Breeding goals
+**Branching:** after the Woodland Workshop, the Pond/Creek, Root Hollow,
+and Community Clearing can be developed in any order, so players with
+Blue-leaning (Local Discovery / Social Craft) mushrooms have an early
+goal. The Enchanted Landmark comes after two of the three.
 
-Support long-term goals such as completing cap-shape and color
-collections, discovering all markings, breeding a mushroom with a
-particular affinity/trait combination, producing a rare mutation, and
-developing a lineage with high performance in a chosen job.
+### 12.2 Rare habitats
 
-### 8.4 Preventing breeding frustration
+Rare habitats (first: **Moonstone Ring**) are special discoveries found
+by Local Discovery work. They unlock Mutations (Section 10.1), allow
+Rare-tier attribute variation, and may adjust Mutation weights.
 
--   Never consume or permanently remove parent mushrooms.
--   Provide clear breeding eligibility and timer information.
--   Avoid a single best pairing; preserve multiple viable breeding
-    paths.
--   Give players useful outcomes even when offspring are not rare (new
-    appearance combinations, lineage progress, or breeding materials).
+### 12.3 Areas as content
 
-## 9. Friend Sharing and Social Play
+Each area is a data definition: tiles, discovery requirements,
+structures, jobs, plants, resources, Wild Visitor pools, and Field Guide
+entries. New areas must be addable through data files.
 
-### 9.1 MVP: portable mushroom exchange
+---
 
-Because GitHub Pages is static hosting, the first release should not
-promise real-time multiplayer. Implement a portable exchange flow:
+## 13. Resources, Economy, and Progression
 
-1.  Player chooses a mushroom and selects Share.
-2.  Game exports a compact, versioned mushroom record as a JSON file or
-    encoded share code.
-3.  Player sends the file/code to a friend using any external messaging
-    method.
-4.  Friend imports it into their own forest.
-5.  Imported mushroom is added as a breeding guest or genetic donor; the
-    original owner keeps their mushroom.
-6.  The receiving player can breed with the guest and optionally export
-    an offspring or breeding result back.
+### 13.1 Resource categories
 
-### 9.2 Import validation and safety
+| Category | Examples | Uses |
+|---|---|---|
+| Natural | Twigs, bark, stones, leaves, berries, nuts, seeds, dew, clay | Planting, building, breeding costs, food |
+| Fungal | Spores, rare spores, compost, mycelium threads | Breeding costs, fungal cultivation, soil upgrades, station upgrades |
+| Magical | Glow dust, moonlight, spirit dew, stardust, crystal fragments | Enchantment, rare habitats, insight tools, advanced structures |
+| Crafted | Planks, woven fiber, polished stone, charms, gifts, decorations | Buildings, workstations, decorations, upgrades, consumables |
 
--   Validate schema version, gene values, trait IDs, string lengths, and
-    payload size.
--   Do not execute imported content or trust imported resource
-    quantities.
--   Imported mushrooms must not grant currency, materials, unlocks, or
-    arbitrary progression.
--   Assign a new local instance ID while preserving source lineage
-    metadata.
--   Prevent duplicate imports where practical using a stable share ID or
-    hash.
+### 13.2 Progression
 
-### 9.3 Future online features
+- Start with a small clearing, three starter mushrooms, a basic garden,
+  the Breeding Nook, and two jobs.
+- Unlock new jobs and workstations through discovery and construction
+  (Section 12).
+- Unlock breeding layers through breeding milestones and station
+  upgrades (Section 10).
+- Expand the forest in sections, each with new terrain, habitats,
+  plants, Wild Visitors, and attribute variety.
+- Grow specialists by line-breeding for Advanced Traits, Perk levels, and
+  Mutations; use them where their stats matter.
+- Long-term collection milestones and cosmetic goals ensure progression
+  is not only about producing more resources.
+
+### 13.3 Offline progress
+
+- On load, compute `elapsed = now − lastSeenAt`, clamped to
+  `[0, offlineCap]` (Config: `offlineCapHours`, default 8).
+- If `now < lastSeenAt` (clock moved backward), grant nothing and keep
+  `lastSeenAt` unchanged.
+- Resolve job cycles, plant growth, incubation, and Wild Visitor arrivals
+  over the elapsed window. For performance, resolution MAY aggregate
+  cycles per forest-clock segment (phase × weather), but must produce
+  deterministic results.
+- Each job assignment keeps a `lastResolvedCycle` cursor; cycles at or
+  before the cursor are never granted again.
+- Display a return summary: resources produced, plants tended, projects
+  advanced, discoveries, and incubations ready to claim.
+
+---
+
+## 14. Friend Sharing and Social Play
+
+### 14.1 MVP: portable mushroom exchange
+
+Because GitHub Pages is static hosting, the MVP does not promise
+real-time multiplayer. Exchange works like this:
+
+1. The player chooses an owned mushroom and selects **Share**.
+2. The game exports a compact, versioned mushroom record as a JSON file
+   or an encoded share code (`MF1-…`, base64url with checksum).
+3. The player sends it to a friend by any external method.
+4. The friend imports it. It is previewed, validated, and added as a
+   **Guest** in their Guest Grove.
+5. The original owner keeps their mushroom; sharing copies genetics, it
+   does not transfer the creature.
+6. The receiving player breeds their own mushroom with the Guest. The
+   offspring belongs to the breeder and can be exported back.
+
+### 14.2 Genetic donor value
+
+A mushroom with rare attributes, strong Advanced Traits, three high-level
+Perks, and a rare Mutation is a desirable donor because its genetics can
+enter another player's population through normal inheritance rolls.
+
+- Sharing preserves the mushroom's complete genetic identity: ordinary
+  attributes, colour sub-gene, cosmetic genes, Advanced Traits (with
+  their `traitUid` and origin), Perks and levels, Mutation, temperament,
+  generation, and lineage summary.
+- Before breeding, the player can inspect a Guest's full detail screen:
+  attributes, recalculated stats, traits, Perks, Mutation, origin forest,
+  and lineage.
+- Offspring lineage records both parents, including the friend's
+  mushroom (stored as a lineage snapshot so it survives if the Guest is
+  later removed).
+- Guest genetics are subject to all normal inheritance chances; a Guest
+  never guarantees its bonuses.
+
+### 14.3 Guest rules
+
+- Guests cannot work, produce, or grant resources, currency, unlocks, or
+  progression.
+- At least one parent in any breeding must be owned (no Guest × Guest).
+- Guest Grove capacity: Config: `guestCap` (default 10). Removing a
+  Guest requires confirmation and does not affect offspring.
+- Guests cannot be re-exported in the MVP; owned offspring of Guests can
+  (decision D-6).
+- Guest genetics from locked systems are carried dormant (Section 10.3).
+
+### 14.4 Import validation and safety
+
+Validation is all-or-nothing; any failure rejects the import with a clear
+message and leaves the save untouched.
+
+- **Format:** payload ≤ Config: `maxSharePayloadBytes` (default 4 KB);
+  valid encoding and checksum; supported share schema version. Records
+  from a newer game version with unknown content IDs are rejected with
+  "This mushroom needs a newer version of Mushroom Forest."
+- **Content IDs:** every attribute, Perk, and Mutation ID exists in the
+  receiver's content definitions.
+- **Values:** RGB integers 0–255; colour sub-gene templates and orders
+  valid; generation an integer ≥ 1; Perk levels within 1..max; trait
+  bonus equals config; trait stats valid.
+- **Limits:** ≤ 8 traits, ≤ 3 distinct Perks, ≤ 1 Mutation.
+- **Plausibility** (catches hand-edited records): traits ≤
+  `min(8, 2^(generation−1) − 1)`; a Perk at level L requires generation ≥
+  L + 1; a Mutation requires generation ≥ 2.
+- **Strings:** name and forest name ≤ 24 characters, trimmed, control
+  characters removed, rendered as text only (never HTML).
+- **Never trusted:** stat totals, rarity, productivity, or any resource
+  quantity in the payload are ignored; all derived values are recalculated
+  from validated genetics.
+- **Identity:** the Guest receives a new local instance ID; its
+  `originalId`, `originForestId`, and lineage metadata are preserved.
+- **Duplicates:** a stable `shareId` (hash of canonical genetic payload +
+  origin IDs) prevents importing the same mushroom twice; importing a
+  mushroom from your own forest is rejected.
+- Imported content is never executed.
+
+**Static-hosting limitation (labelled):** without a server, the game
+cannot prove a share code was bred legitimately. Validation guarantees
+every import is a *legal* mushroom within all caps and plausibility
+rules, but a determined player could hand-craft a legal, high-end
+record. Server-validated provenance is a future backend feature.
+
+### 14.5 Future online features
 
 A later backend could add player profiles, friend lists, asynchronous
-breeding requests, a public mushroom market, cloud saves, and
-server-validated trades. Keep the MVP data model modular so these can be
-added without rewriting the breeding system.
+breeding requests, a public mushroom market, cloud saves, signed
+provenance, and server-validated trades. The share record and breeding
+resolver are kept modular so these can be added without rewriting the
+breeding system.
 
-## 10. Resources, Economy, and Progression
+---
 
-### 10.1 Resource categories
+## 15. User Interface and Screens
 
-  -----------------------------------------------------------------------
-  Category                Examples                Uses
-  ----------------------- ----------------------- -----------------------
-  Natural                 Twigs, bark, stones,    Basic crafting,
-                          leaves, berries, nuts,  planting, building,
-                          seeds                   food.
+### 15.1 Screen overview
 
-  Fungal                  Spores, caps, compost,  Breeding, fungal
-                          mycelium threads        cultivation, soil
-                                                  upgrades.
+| Screen | Key contents |
+|---|---|
+| Forest | Main scene: terrain, plants, structures, visible mushrooms, clock/weather indicator, resource summary, navigation. |
+| Mushroom Detail | See 15.2. |
+| Collection | Owned residents, Archive, Guests; filters by affinity, rarity, generation, job, trait, Perk, Mutation. |
+| Field Guide | See Section 16. |
+| Breeding | See 15.3. |
+| Jobs | Unlocked and locked jobs (with unlock requirements), eligible mushrooms ranked by job score, estimated output, active assignments. |
+| Inventory | Resources, seeds, spores, crafted items, consumables, discoveries; sorting and filtering. |
+| Build / Decorate | Place, move, rotate (if supported), remove; costs, habitat influence, restoration projects. |
+| Sharing | Export mushroom (code + file), import (paste or file), validation results, Guest preview, Guest Grove list. |
+| Settings | Sound, animation, accessibility, save export/import, reset with confirmation, version information. |
 
-  Magical                 Glow dust, moonlight,   Enchantment, rare
-                          spirit dew, crystal     habitats, advanced
-                          fragments               structures.
+### 15.2 Mushroom Detail screen
 
-  Crafted                 Planks, woven fiber,    Buildings,
-                          polished stone, charms  workstations,
-                                                  decorations, upgrades.
-  -----------------------------------------------------------------------
+- Full animated sprite, including Mutation visual effect.
+- Name (rename), Genetic Rarity tier, Affinity, temperament.
+- **Ordinary attributes:** each category with its attribute name, tier,
+  and stat contribution; cap colour swatch with RGB, colour family, and
+  the 12-point allocation breakdown.
+- **Eight job stats:** bar per stat with stacked segments (attributes /
+  traits / Mutation) and any capped overflow.
+- **Advanced Traits:** list with stat, +4, origin mushroom and generation.
+- **Perks:** name, current level and strength, max level, condition,
+  dormant marker if applicable.
+- **Mutation:** name, visual preview, bonuses, origin (spontaneous or
+  inherited from …).
+- Generation number and parent lineage (parents and grandparents, tap to
+  navigate; Guest parents shown with origin forest).
+- Assigned job, job score, effectiveness label, current productivity
+  including active Perk conditions ("Rain Worker active +5%").
+- Actions: Assign, Breed, Share, Archive/Move to residents.
 
-### 10.2 Progression
+### 15.3 Breeding screen
 
--   Start with a small clearing, a few common mushrooms, a basic garden,
-    and a limited set of jobs.
--   Unlock new jobs and workstations through simple milestones,
-    discoveries, and crafted structures.
--   Expand the forest in sections, each with new terrain, habitat
-    conditions, plants, and possible mushroom genetics.
--   Use specialist mushrooms to improve production and unlock rare
-    ecological interactions.
--   Introduce long-term collection milestones and cosmetic goals so
-    progression is not only about producing more resources.
+- Select two mushrooms (owned, Guests, present Wild Visitors), with
+  eligibility reasons for unavailable ones.
+- Parents displayed side by side: sprites, attributes, stats, traits,
+  Perks, Mutations.
+- **Inheritance categories:** for each attribute category, the two
+  candidate attributes plus "variation possible"; trait and Perk pools
+  marked "may be inherited"; shared Perks marked "may combine"; Mutation
+  status ("may inherit" / "rare spontaneous chance"). No exact outcome
+  and, before the Spore Lens, no exact percentages.
+- Cost, incubation time, and slot availability; **Begin Breeding**.
+- Incubation view: spore cluster at the station with countdown.
+- Reveal sequence: attributes first, then new trait/Perk/Mutation
+  highlights with distinct celebratory effects.
+- Offspring record: parent-versus-offspring comparison and lineage entry.
 
-### 10.3 Offline progress
+### 15.4 Mobile-first interaction
 
-When the game loads, calculate elapsed time since the last save and
-resolve eligible work cycles. Use a configurable offline cap for
-balancing (initial suggestion: 8 hours, adjustable). Display a return
-summary showing resources produced, plants tended, projects advanced,
-and discoveries. Store deterministic timestamps and avoid granting the
-same cycle twice.
+Large touch targets, readable text, clear modal close controls, no
+essential controls behind hover, safe-area-aware layouts. The forest
+must remain usable on a narrow phone screen.
 
-## 11. User Interface and Screens
+---
 
-  -----------------------------------------------------------------------
-  Screen                              Key contents
-  ----------------------------------- -----------------------------------
-  Forest                              Main playable scene; terrain,
-                                      plants, structures, visible
-                                      mushrooms, resource summary,
-                                      navigation.
+## 16. Field Guide and Tutorials
 
-  Mushroom Detail                     Sprite, name, rarity, generation,
-                                      parents, genetics, stats,
-                                      temperament, current job, rename
-                                      and assign controls.
+### 16.1 Field Guide sections
 
-  Collection / Field Guide            Discovered mushrooms, silhouettes
-                                      for unknown entries, gene/trait
-                                      indexes, lineage filters, rarity
-                                      and affinity filters.
+| Section | Contents |
+|---|---|
+| Ordinary Attributes | Every attribute by category, tier, sprite, and exact stat contribution; undiscovered ones shown as silhouettes with habitat hints. |
+| Colour | How RGB is split into Red/Green/Blue groups, the 12-point budget, allocation templates, an interactive example, and the colour-family collection. |
+| Advanced Traits | Discovered trait stats, total traits bred, notable lineages, stacking milestones. |
+| Perks | Perk collection with conditions, levels discovered, max levels, and combination rules once seen. |
+| Mutations | Mutation collection with visuals; undiscovered ones shown as mysterious silhouettes with hints. |
+| Jobs | Descriptions, primary/secondary stats, workstations, unlock requirements, synergies discovered. |
+| Breeding Milestones | Unlock stages, generations reached, collection goals. |
+| Habitats & Areas | Areas, habitat requirements, Wild Visitors, rare habitats. |
 
-  Breeding                            Parent selection, inheritance
-                                      hints, breeding timer, spore
-                                      cluster/egg, reveal sequence,
-                                      offspring record.
+### 16.2 Tutorials
 
-  Jobs                                Available job types, eligible
-                                      mushrooms, work requirements,
-                                      output estimates, active
-                                      assignments.
+Every new system has a short, skippable tutorial and a matching Field
+Guide entry: first job assignment, first breeding, first Advanced Trait,
+Spore Cradle and first Perk, first Mutation unlock, first Guest import,
+first insight tool.
 
-  Inventory                           Resources, seeds, spores, crafted
-                                      items, geodes or discoveries,
-                                      sorting and filtering.
+---
 
-  Build / Decorate                    Place, move, rotate if supported,
-                                      and remove objects; show costs and
-                                      habitat influence.
+## 17. Art Direction and Asset System
 
-  Sharing                             Export mushroom, import file/code,
-                                      preview imported mushroom,
-                                      validation errors, breeding guest
-                                      list.
+- Use the supplied mushroom sprite sheet as a visual reference for colour
+  variety, cap silhouettes, markings, stems, shadows, and pixel density.
+- Build mushrooms from modular layers: cap base, cap highlight/shade
+  ramp, markings, gills/underside, stem, feet/base shadow, ordinary glow,
+  and Mutation effect layers.
+- Cap shading ramps are generated from the stored RGB with a fixed
+  palette rule so every colour reads well with dark outlines.
+- Consistent pixel scale and nearest-neighbour rendering; no blurry
+  scaling.
+- Sprites are composed from genes so offspring visibly inherit traits.
+- Rarity is readable through unusual palettes, markings, glow,
+  particles, or silhouettes, not only a coloured label.
+- Each Mutation has defined assets: outline/aura layer, particle system,
+  and idle/working animation variants. Ordinary glow is subtle; Mutation
+  glow is coloured and animated, so the two never look alike.
+- Animation states: idle, walking, working, carrying, resting, and
+  special action where practical.
+- The forest is warm, cozy, slightly mysterious, and uncluttered.
+  Mushrooms are cute and characterful, not overly humanoid.
 
-  Settings                            Sound, animation, accessibility,
-                                      save export/import, reset with
-                                      confirmation, version information.
-  -----------------------------------------------------------------------
+---
 
-Mobile-first interaction: large touch targets, readable text, clear
-modal close controls, no essential controls hidden behind hover, and
-layouts that respect device safe areas. The forest should remain usable
-on a narrow phone screen.
+## 18. Data Model
 
-## 12. Art Direction and Asset System
+Stable IDs and data-driven definitions; content is separate from UI and
+simulation logic.
 
--   Use the supplied mushroom sprite sheet as a visual reference for
-    color variety, cap silhouettes, markings, stems, shadows, and pixel
-    density.
--   Build mushrooms from modular layers where feasible: cap base, cap
-    highlight, spots/markings, underside, stem, feet/base shadow,
-    glow/effects.
--   Use consistent pixel scale and nearest-neighbor rendering; avoid
-    blurry scaling.
--   Create original sprite combinations from data-driven genes so
-    offspring can visibly inherit their parents' traits.
--   Make rarity readable through unusual palettes, markings, glow,
-    particles, or silhouettes, not only a colored rarity label.
--   Include idle, walking, working, carrying, resting, and
-    special-action animation states where practical.
--   Keep the forest warm, cozy, slightly mysterious, and uncluttered.
-    The mushrooms should be cute and characterful, not overly humanoid.
+### 18.1 Content definitions
 
-## 13. MVP Scope
+| Entity | Important fields |
+|---|---|
+| AttributeDefinition | id, category, name, tier, statContributions{8}, variationNeighbours[], spriteLayerId, habitatSources[] |
+| ColorFamilyDefinition | id, name, referenceRgb, lightnessBand |
+| PerkDefinition | id, name, description, condition, effectType, levels[], maxLevel, combineRule, relatedStat |
+| MutationDefinition | id, name, statBonuses or bonusRule, specialEffects[], visualAssetIds, baseWeight, habitatWeightModifiers |
+| JobDefinition | id, name, family, primaryStat, secondaryStat, baseDuration, baseOutput, workstationId, eligibleTargets, unlockRequirement, applicablePerkConditions, animationState |
+| AreaDefinition | id, discoveryRequirement, structures[], jobs[], plants[], resources[], wildVisitorPool |
+| StructureDefinition | id, cost, buildRequirement, unlocks[], workerSlots |
+| PlantDefinition | id, name, habitatRequirements, growthDuration, outputs, rarity, visualAssetId |
+| MilestoneDefinition | id, trigger, unlocks[], tutorialId, fieldGuideEntryId |
+
+### 18.2 Runtime records
+
+| Entity | Important fields |
+|---|---|
+| MushroomInstance | uid, name, createdAt, generation, status (resident / archived / guest / wild), parentIds, lineageSnapshot, genes, advancedTraits[], perks[], mutation, temperament, jobId, targetId, restedState, restUntil, originalId, originForestId, shareId |
+| MushroomGenes | capShape, capColor{r,g,b}, colorAllocation{red,green,blue: {template, order[]}}, stem, markings, gills, glow, accentColor, stemColor, patternSeed |
+| AdvancedTrait | traitUid, stat, bonus, originMushroomId, originName, originGeneration, originForestId, originBreedingId, dormant |
+| PerkInstance | perkId, level, originMushroomId, originGeneration, originForestId, dormant |
+| MutationInstance | mutationId, resolvedBonuses, origin, originMushroomId, originGeneration, originForestId, dormant |
+| DerivedStats (cache, never authoritative) | base{8}, traitBonus{8}, mutationBonus{8}, final{8}, overflow{8}, affinity, rarityScore |
+| WorldObject | id, definitionId, tileX, tileY, rotation, state, growthProgress, storedOutput |
+| JobAssignment | mushroomUid, jobId, targetId, assignedAt, lastResolvedCycle |
+| ResourceStack | resourceId, quantity |
+| BreedingRecord | id, parentAUid, parentBUid, parentSnapshots, startedAt, completesAt, outcomeSeed, breedingCounter, configVersion, sealedOffspring, state (incubating / ready / claimed), claimedAt |
+| GuestRecord | mushroomUid, shareId, importedAt, sourceForestName |
+| PlayerSave | schemaVersion, configVersion, localPlayerId, forestName, createdAt, lastSeenAt, worldEpoch, worldSeed, rngRoot, breedingCounter, world, mushrooms, guests, breedingRecords, inventory, discoveries, unlocks, fieldGuide, settings |
+
+### 18.3 Share record (export format)
+
+`shareSchemaVersion, shareId, name, originalId, originForestId,
+originForestName, generation, genes, temperament, advancedTraits[],
+perks[], mutation, lineageSummary (parents and grandparents: name,
+originalId, generation, forestName), exportedAt, checksum`.
+
+It deliberately contains **no** stats, rarity, resources, or progression.
+
+---
+
+## 19. Centralized Configuration
+
+All balance values live in one versioned configuration module
+(`configVersion` stored in saves and sealed breeding records). Initial
+groups and keys:
+
+| Group | Keys (defaults) |
+|---|---|
+| Stats | `statCap` 100; category budgets (18/12/12/10/8/6); `colorBudget` 12; `colorZeroFallback` (1,1,1); attribute contribution tables |
+| Starters | `starterCount` 3; `starterMaxStat` 28; `starterMaxAttempts` 500; `starterPalette`; curated fallback set |
+| Advanced Traits | `advancedTraitBonus` 4; `maxAdvancedTraits` 8; `newAdvancedTraitChance` 0.25; `traitInheritChanceSingle` 0.5; `traitInheritChanceShared` 0.75; `advancedTraitStatWeighting` uniform; `tutorialGuaranteedFirstTrait` true |
+| Perks | `maxPerks` 3; `newPerkChance` 0.08; `perkInheritChanceSingle` 0.5; `perkInheritChanceShared` 0.9; combine-rule chances; `newPerkAffinityWeight` 0.6; perk level tables |
+| Mutations | `maxMutations` 1; `spontaneousMutationChance` 0.0075; `mutationInheritChanceSingle` 0.35; `mutationInheritChanceBoth` 0.6; `mutationWeights`; mutation bonuses |
+| Inheritance | `attributeParentWeight` 0.5; `attributeVariationChance` 0.06; `rareVariationShare` 0.2; `firstBreedVariationEnabled` false; `colorBlendRange` [0.3,0.7]; `colorJitter` 12; `colorVariationHueShift` 30; `temperamentInheritance` |
+| Breeding | `incubationMinutes` 3; `parentRestMinutes` 10; `offspringMaturationMinutes` 0; `breedingCost`; `freeBreedingCount` 3; station slots and speed modifiers |
+| Unlocks | milestone triggers (Section 10.1), area discovery triggers (Section 12.1) |
+| Jobs | `jobScoreWeights` 0.7/0.3; `effectivenessCurve`; `productivityBonusCap` 0.6; job durations and outputs; temperament values |
+| World | `forestDayLengthMinutes` 48; phase lengths; `weatherWeights` 65/20/15; `wildVisitorStayDays` 1; `visibleMushroomCap` 10; `baseResidentCap` 8; `homeCapacity` 2 |
+| Offline | `offlineCapHours` 8 |
+| Rarity | point values and tier thresholds (Section 6.6) |
+| Sharing | `maxSharePayloadBytes` 4096; `guestCap` 10; name length 24 |
+
+Configuration is data, not scattered constants; game logic reads it
+through one accessor so tests can inject alternative values.
+
+---
+
+## 20. Anti-Exploit and Technical Requirements
+
+- **Sealed breeding:** the outcome seed is generated and saved at
+  incubation start and the offspring is resolved and sealed immediately
+  (Section 9.6). Refreshing never rerolls; changing the device clock never
+  changes the outcome.
+- **Clock handling:** elapsed time is clamped to `[0, offlineCap]`; a
+  backward clock grants nothing. *Labelled limitation:* moving the device
+  clock forward can finish timers early on a static, local-only game; the
+  outcome is unaffected and the offline cap limits production gains.
+- **Single claim:** breeding records move incubating → ready → claimed in
+  one atomic save transaction that also adds the offspring; a claimed
+  record can never produce another offspring.
+- **No duplicate production:** per-assignment `lastResolvedCycle`
+  cursors.
+- **Logic-level caps:** stat cap, trait cap, Perk cap, Mutation cap,
+  productivity bonus cap, and Perk max levels are enforced in the
+  simulation and on every load and import, not just in the UI.
+- **Recalculate, never trust:** stats, rarity, and productivity are
+  always derived from validated genetics. Imported or loaded stat values
+  are ignored.
+- **Save integrity:** schema-validated load; on corruption, keep the last
+  valid save and offer the backup flow. Invalid imports never overwrite a
+  valid save.
+- **Centralized configuration:** all probabilities, distributions, caps,
+  and Perk rules live in Section 19's configuration.
+- **Dev controls** (behind a development flag only): grant resources,
+  unlock stages, advance time, force trait/Perk/Mutation rolls, generate
+  test mushrooms of any generation, and inspect sealed outcomes.
+
+---
+
+## 21. Quality and Acceptance Principles
+
+- Playable on a phone in portrait orientation and usable with touch.
+- Refreshing or closing the browser never erases a valid save.
+- No mushroom can be permanently lost through work or breeding.
+- Breeding creates persistent offspring with recorded parents.
+- Work has a meaningful, visible or clearly reported outcome.
+- Different jobs and genetic specialties have distinct uses; no single
+  stat profile is best for every job.
+- Imported mushrooms cannot inject resources, unlocks, scripts, illegal
+  bonuses, or invalid data.
+- The app deploys correctly under a GitHub Pages project subpath.
+- Clear empty states, error messages, confirmations for destructive
+  actions, and a way to export a backup.
+
+---
+
+## 22. Test Plan
+
+Automated tests run against the simulation layer (no UI) with injectable
+configuration and seeds.
+
+### 22.1 Required tests
+
+| # | Test | Verification |
+|---|---|---|
+| 1 | New player receives exactly three basic mushrooms | Over many seeds, a new save has exactly 3 mushrooms, all Basic-tier attributes, generation 1, starter-palette colours. |
+| 2 | Starters have no Advanced Traits, Perks, or Mutations | All three lists empty / null for every generated starter. |
+| 3 | Identical ordinary attributes → identical stat contributions | Two mushrooms with identical attributes and colour genes produce identical base stats, across reloads and recalculation. |
+| 4 | Every colour gene contributes exactly 12 points | Property test over random and edge RGB (incl. 0,0,0 and single channels): colour contribution sums to 12. |
+| 5 | Yellow distributes 6 / 6 / 0 | (255,255,0) → Red 6, Green 6, Blue 0. |
+| 6 | White distributes 4 / 4 / 4 | (255,255,255) → 4 / 4 / 4; brightness invariance: (100,100,100) identical. |
+| 7 | Advanced Traits give exactly +4 to one eligible stat | A new trait changes exactly one stat by +4; never targets a stat with < 4 headroom. |
+| 8 | No stat can exceed 100 | Max-power fixtures (max attributes + 8 same-stat traits + Mutation) clamp at 100 and record overflow. |
+| 9 | No mushroom can have more than three Perks | Breed two 3-Perk parents with disjoint Perks many times; offspring ≤ 3. |
+| 10 | No mushroom can have more than one Mutation | Across many breedings and imports, mutation count ≤ 1. |
+| 11 | Two mutated parents cannot produce two Mutations | Force inheritance chances to 100%; offspring has exactly one. |
+| 12 | Duplicate Perks follow their upgrade rules | Rain Worker L1 × L1 → L2; unequal levels → max (± configured chance); `slow` rule respected; never exceeds max level. |
+| 13 | Spontaneous Mutation rolls only without inherited Mutation | Instrumented RNG: spontaneous roll invoked iff no parental Mutation inherited. |
+| 14 | Refreshing during incubation cannot change the offspring | Start incubation, serialize, reload, change clock, change config version: claimed offspring equals sealed result. |
+| 15 | Invalid imports cannot grant illegal bonuses | Fuzzed and hand-crafted payloads (9 traits, bonus 5, unknown IDs, level > max, implausible generation, injected stats/resources, oversized strings) are rejected or recalculated; save unchanged on rejection. |
+| 16 | Jobs stay locked until discovery and construction | Each job unavailable until both its discovery flag and workstation completion are true; assignment API rejects locked jobs. |
+
+### 22.2 Additional recommended tests
+
+- Every ordinary mushroom's base stat total equals 66 (and each category
+  table sums to its budget).
+- Largest-remainder rounding: Amber (255,170,0) → 7 / 5 / 0; tie-breaks
+  follow Red → Green → Blue and allocation order.
+- Colour allocation is unchanged after recalculation, migration, and
+  export/import round trips.
+- Starter generation constraints (distinct groups, Gardener/Forager fit,
+  stat cap) hold for 10,000 seeds; fallback set used when attempts run
+  out.
+- Locked systems produce no new entries; donor entries arrive dormant
+  and activate on unlock.
+- At most one new Advanced Trait per breeding; trait cap 8 respected.
+- Breeding never modifies either parent.
+- Offline: double load does not double-grant; backward clock grants
+  nothing; elapsed beyond 8 h is clamped.
+- Share round trip: export → import in a second save preserves genetics,
+  assigns new uid, rejects duplicate import and own-forest import.
+- Productivity bonus cap is respected with all Perks/temperament active.
+
+---
+
+## 23. MVP Scope
 
 ### Must have
 
--   A playable, responsive forest scene with a small editable grid or
-    placement system.
--   At least 3 habitat/terrain types and a small set of plants, fungi,
-    and decorative objects.
--   At least 12 mushroom visual combinations using modular or
-    data-driven genes.
--   Persistent mushroom identities, names, basic stats, affinities, and
-    temperaments.
--   At least 4 functional jobs: Gardener, Forager, Mycologist, and
-    Woodworker (or equivalent).
--   A working breeding cycle with inheritance, lineage, and a
-    low-probability mutation.
--   A collection/Field Guide screen.
--   Offline production and a return summary.
--   Save/load, schema versioning, and manual save export/import.
--   Mushroom export/import sharing that works without a server.
+- A playable, responsive forest scene with a small editable grid or
+  placement system.
+- At least 3 habitat/terrain types and a small set of plants, fungi, and
+  decorative objects.
+- Three randomized, complementary, Basic-only starter mushrooms.
+- All six ordinary attribute categories with Basic and Uncommon content
+  (at least 12 visual combinations; the Basic pool alone provides far
+  more), plus the RGB colour stat system.
+- The eight job stats with derived base stats and the 100 cap.
+- Persistent mushroom identities, names, stats, Affinity, temperament.
+- At least 4 functional jobs: Gardener, Forager, Mycologist, Woodworker,
+  each unlocked through its development stage.
+- A working breeding cycle with sealed seeded resolution, attribute
+  inheritance and variation, lineage, and generation tracking.
+- Advanced Traits with the Early Breeding Milestone unlock.
+- A Field Guide with Ordinary Attributes, Colour, Advanced Traits, and
+  Jobs sections.
+- Offline production and a return summary.
+- Save/load, schema versioning, and manual save export/import.
+- Mushroom export/import sharing with full validation and Guests.
+- Centralized configuration and the required test suite (Section 22.1).
 
 ### Should have
 
--   Visible mushroom walking and job animations.
--   Basic job synergies.
--   A few buildable structures and workstation requirements.
--   Day/night visual variation.
--   A small number of rare habitat discoveries and special mushroom
-    variants.
+- Perks with the Spore Cradle unlock (initial catalogue of 8–12).
+- Mutations with the rare-habitat/Generation 5 unlock (initial four,
+  with visuals).
+- Forest clock and weather (required as soon as Perks ship).
+- Visible walking and job animations.
+- Basic job synergies.
+- A few buildable structures and workstation requirements beyond the
+  first four jobs (Pond/Creek, Root Hollow).
+- Wild Visitors.
+- Rare habitat discovery (Moonstone Ring).
 
 ### Not in MVP
 
--   Combat, battles, expeditions, or sending mushrooms away from the
-    forest.
--   Real-time multiplayer, accounts, cloud saves, or live friend visits.
--   Payments, premium currency, ads, or monetization.
--   Large procedural worlds or complex pathfinding.
--   Dozens of jobs before the core loop is proven.
+- Combat, battles, expeditions, or sending mushrooms away from the forest.
+- Real-time multiplayer, accounts, cloud saves, or live friend visits.
+- Payments, premium currency, ads, or monetization.
+- Large procedural worlds or complex pathfinding.
+- Dozens of jobs before the core loop is proven.
+- Breeding insight tools (planned for Expansion).
+- Hidden/recessive (carrier) genes.
 
-## 14. Suggested Build Phases
+---
 
-  -----------------------------------------------------------------------
-  Phase                   Deliverable             Acceptance criteria
-  ----------------------- ----------------------- -----------------------
-  0\. Foundation          Project setup,          Runs locally and on
-                          responsive layout, save GitHub Pages; save/load
-                          model, data             survives refresh; no
-                          definitions.            hard-coded absolute
-                                                  paths.
+## 24. Suggested Build Phases
 
-  1\. Forest prototype    Place terrain/objects;  Player can create a
-                          display mushrooms;      small habitat and see
-                          basic movement and      mushrooms in the world.
-                          interactions.           
+| Phase | Deliverable | Acceptance criteria |
+|---|---|---|
+| 0. Foundation | Project setup, responsive layout, save model, centralized config, content definitions, seeded RNG utilities, test harness. | Runs locally and on GitHub Pages subpath; save/load survives refresh; config accessor and RNG sub-streams tested. |
+| 1. Genetics core | Attribute tables, colour system, stat calculator, starter generator, sprite composition. | Tests 1–6 and 8 pass; three starters render and look visibly different. |
+| 2. Forest prototype | Place terrain/objects; display mushrooms; basic movement. | Player can create a small habitat and see mushrooms in the world. |
+| 3. Work loop | Gardener, Forager, then Fungal Patch and Workshop unlocks; inventory; job scores; production timers. | Each job produces a distinct output; assignment and output persist; test 16 passes. |
+| 4. Breeding | Breeding Station, sealed resolution, attribute inheritance/variation, lineage, Advanced Traits, milestone unlocks. | Offspring differ visibly and genetically; parents unchanged; tests 7, 14 pass. |
+| 5. Collection and polish | Mushroom Detail, Field Guide, reveal animation, offline return summary. | Player can understand stats and discoveries; offline production consistent. |
+| 6. Social exchange | Share codes/files, validation, Guests, dormant carry. | Two separate browser saves exchange mushrooms; test 15 passes. |
+| 7. Perks, Mutations, time | Forest clock, weather, Spore Cradle, Perks, rare habitat, Mutations and visuals. | Tests 9–13 pass; Perks visibly activate in the right conditions. |
+| 8. Expansion | Remaining areas and jobs, synergies, Wild Visitors, insight tools, more content. | New content added through data files without rewriting core systems. |
 
-  2\. Work loop           Implement 4 jobs,       Each job produces a
-                          resource inventory, job distinct useful output;
-                          assignment, production  assignment and output
-                          timers.                 persist.
+---
 
-  3\. Breeding            Parent selection,       Offspring differ
-                          incubation,             visibly and
-                          inheritance, mutation,  genetically; parent
-                          lineage.                mushrooms remain
-                                                  unchanged.
-
-  4\. Collection and      Field Guide, detail     Player can understand
-  polish                  pages, animations,      and track discoveries;
-                          offline return summary. offline production is
-                                                  consistent.
-
-  5\. Social exchange     Export/import mushroom  Two separate browser
-                          records and breeding    saves can exchange
-                          guests.                 mushrooms using a file
-                                                  or code; imports are
-                                                  validated.
-
-  6\. Expansion           More jobs, habitats,    New content can be
-                          structures, synergies,  added through data
-                          rare variants.          files without rewriting
-                                                  core systems.
-  -----------------------------------------------------------------------
-
-## 15. Data Model Guidance
-
-Use stable IDs and data-driven definitions. Keep content separate from
-UI and simulation logic. Suggested conceptual entities:
-
-  -----------------------------------------------------------------------
-  Entity                              Important fields
-  ----------------------------------- -----------------------------------
-  MushroomInstance                    id, name, createdAt, generation,
-                                      parentIds/sourceLineage, genes,
-                                      affinity, traits, temperament,
-                                      stats, jobId, targetId,
-                                      restedState.
-
-  MushroomGenes                       capShape, primaryColor,
-                                      secondaryColor, markings,
-                                      stemShape, stemColor, glowLevel,
-                                      patternSeed.
-
-  JobDefinition                       id, name, family, requiredStats,
-                                      affinityBonuses, baseDuration,
-                                      baseOutput, eligibleTargets,
-                                      animationState.
-
-  PlantDefinition                     id, name, habitatRequirements,
-                                      growthDuration, outputs, rarity,
-                                      visualAssetId.
-
-  WorldObject                         id, definitionId, tileX, tileY,
-                                      rotation, state, growthProgress,
-                                      storedOutput.
-
-  ResourceStack                       resourceId, quantity.
-
-  BreedingRecord                      id, parentAId, parentBId,
-                                      startedAt, completesAt,
-                                      offspringId, outcomeSeed.
-
-  PlayerSave                          schemaVersion, playerId/localId,
-                                      createdAt, lastSeenAt, world,
-                                      mushrooms, inventory, discoveries,
-                                      settings.
-  -----------------------------------------------------------------------
-
-Use seeded randomness for breeding outcomes so a breeding cycle resolves
-consistently if the page is refreshed. Never rely on a UI animation to
-determine the actual result.
-
-## 16. Quality and Acceptance Principles
-
--   The game must be playable on a phone in portrait orientation and
-    usable with touch.
--   Refreshing or closing the browser must not erase a valid save.
--   No mushroom can be permanently lost through ordinary work or
-    breeding.
--   Breeding must create persistent offspring with recorded parents.
--   Work must have a meaningful, visible or clearly reported outcome.
--   Different jobs and genetic specialties must have distinct uses.
--   Imported mushrooms cannot inject resources, unlocks, scripts, or
-    invalid data.
--   The app must deploy correctly under a GitHub Pages project subpath;
-    avoid assuming the site is hosted at the domain root.
--   Provide clear empty states, error messages, confirmations for
-    destructive actions, and a way to export a backup.
-
-## 17. Instructions to the Development Agent (Claude)
+## 25. Instructions to the Development Agent (Claude)
 
 Build this as an iterative extension of the existing repository if one
 is provided. Before changing code, inspect the repository, identify its
@@ -675,88 +1684,120 @@ framework, current architecture, assets, and existing save system. Do
 not discard or rewrite working systems without explaining why and
 obtaining approval.
 
-1.  Start by reporting the existing project structure and a short
-    implementation plan.
-2.  Implement the MVP in small, testable phases. Keep the app runnable
-    after each phase.
-3.  Preserve existing functionality, assets, and player saves. Add
-    migrations when changing save data.
-4.  Use modular, data-driven definitions for mushrooms, genes, jobs,
-    plants, resources, and structures.
-5.  Keep game simulation logic separate from rendering and UI.
-6.  Make GitHub Pages deployment work from a repository subpath, not
-    only localhost.
-7.  Do not add backend-dependent features to the MVP. Clearly label any
-    feature that cannot be delivered securely with static hosting.
-8.  Add developer/test controls for quickly granting resources,
-    unlocking content, advancing timers, and generating test mushrooms;
-    keep them hidden behind a development flag.
-9.  After each phase, summarize files changed, features implemented,
+1. Start by reporting the existing project structure and a short
+   implementation plan.
+2. Implement in small, testable phases (Section 24). Keep the app
+   runnable after each phase.
+3. Preserve existing functionality, assets, and player saves. Add
+   migrations when changing save data.
+4. Use modular, data-driven definitions for attributes, colours, traits,
+   Perks, Mutations, jobs, plants, resources, areas, and structures.
+5. Keep game simulation logic (including the stat calculator and the
+   breeding resolver) separate from rendering and UI.
+6. Keep every balance value in centralized configuration (Section 19).
+7. Make GitHub Pages deployment work from a repository subpath, not only
+   localhost.
+8. Do not add backend-dependent features to the MVP. Clearly label any
+   feature that cannot be delivered securely with static hosting.
+9. Add developer/test controls (Section 20) behind a development flag.
+10. Implement the required tests (Section 22.1) alongside the systems
+    they cover.
+11. After each phase, summarize files changed, features implemented,
     known limitations, and manual test steps.
-10. Do not claim a feature is complete unless it is implemented and
+12. Do not claim a feature is complete unless it is implemented and
     tested.
 
-## 18. Open Design Decisions
+---
 
-These are intentionally left editable. Choose sensible defaults for the
-first prototype and keep the underlying systems configurable.
+## 26. Design Decisions
 
-  -----------------------------------------------------------------------
-  Decision                Initial recommendation  Final choice / notes
-  ----------------------- ----------------------- -----------------------
-  Game title              Working title: Mushroom 
-                          Forest                  
+Defaults chosen for the first prototype. All remain configurable.
 
-  World layout            Small grid-based        
-                          clearing with free      
-                          decoration layer if     
-                          feasible                
+| Decision | v0.2 choice | Notes |
+|---|---|---|
+| Game title | Working title: Mushroom Forest | |
+| World layout | Small grid-based clearing with free decoration layer if feasible | |
+| Starting population | Exactly 3 randomized Basic mushrooms | Supersedes v0.1 "6–10" and "two starters". |
+| Visible population | Up to 10 animated; rest simulated in background | |
+| Resident capacity | 8 + 2 per Mushroom Home; overflow to Spore Archive | |
+| Stat scale | 0–100 per stat, hard cap 100 | |
+| Base stat total | 66 for every ordinary mushroom | |
+| Colour budget | 12 points, RGB-normalized, largest-remainder rounding | |
+| Advanced Trait | +4, max 8, max one new per breeding | |
+| Perks | Max 3, level-based, per-Perk combination rules | |
+| Mutations | Max 1, spontaneous 0.75% | |
+| Breeding duration | 3 minutes for testing; rebalance later | |
+| Offline cap | 8 hours | |
+| Forest day | 48 real minutes | |
+| Rarity tiers | Common, Uncommon, Rare, Epic, Legendary — derived score | |
+| Social exchange | JSON file plus compact share code | |
+| Visual scale | Consistent pixel grid based on target phone viewport | |
+| Game tone | Cozy, whimsical, slightly mysterious | |
 
-  Mushroom population     Start with 6--10        
-                          visible mushrooms;      
-                          support more through    
-                          background simulation   
+Items still needing approval are listed in Appendix B.
 
-  Breeding duration       Short initial timer     
-                          (e.g. 1--5 minutes for  
-                          testing; rebalance      
-                          later)                  
+---
 
-  Offline cap             8 hours initially;      
-                          configurable            
+## 27. First Playable Milestone
 
-  Stat scale              0--100                  
-
-  Rarity tiers            Common, Uncommon, Rare, 
-                          Epic, Legendary; tune   
-                          probabilities later     
-
-  Social exchange         JSON file plus compact  
-                          share code if payload   
-                          size permits            
-
-  Visual scale            Choose a consistent     
-                          pixel grid based on     
-                          target phone viewport   
-
-  Game tone               Cozy, whimsical,        
-                          slightly mysterious     
-  -----------------------------------------------------------------------
-
-## 19. First Playable Milestone
-
-The first playable milestone should prove the central promise with the
+The first playable milestone proves the central promise with the
 smallest possible slice:
 
--   A small forest clearing with a few placeable habitat objects.
--   Two starter mushrooms with distinct appearances and job strengths.
--   A Gardener job that visibly tends a plant and produces a resource.
--   A Forager job that visibly gathers a different resource.
--   A breeding station that combines the two starter mushrooms and
-    produces a visibly mixed offspring.
--   A collection screen showing the parents, offspring, and lineage.
--   A working local save that survives refresh.
+- A small forest clearing with a few placeable habitat objects.
+- **Three** randomized starter mushrooms with distinct appearances and
+  complementary stat profiles, each showing its eight stats.
+- A Gardener job that visibly tends a plant and produces a resource.
+- A Forager job that visibly gathers a different resource.
+- A Breeding Nook that combines any two starters and produces a visibly
+  mixed offspring, with parents unchanged.
+- Advanced Traits unlocking after the second breeding, with the first
+  trait visible on the offspring's detail screen.
+- A collection screen showing parents, offspring, and lineage.
+- A working local save that survives refresh, including mid-incubation.
 
-If this small slice is enjoyable, expand the job roster, habitats,
-social sharing, and genetic depth. If it is not enjoyable, improve the
+If this slice is enjoyable, expand the job roster, habitats, Perks,
+Mutations, social sharing, and genetic depth. If it is not, improve the
 feel of breeding and visible forest life before adding more content.
+
+---
+
+## Appendix A — Resolved conflicts with v0.1
+
+| v0.1 statement | v0.2 resolution |
+|---|---|
+| "Work is the primary progression mechanic." | Breeding is the central long-term progression system; work and forest development drive world progression and unlocks. |
+| Start with "a few common mushrooms" / "6–10 visible mushrooms" / "two starter mushrooms". | Exactly three randomized Basic starters. The visible cap (10) remains for later populations. |
+| Affinity as an independent gene (Bloom, Spore, Glow, Spirit, Verdant, Shimmer). | Affinity is derived from the highest final stat, with one name per stat. It grants no bonus. |
+| "Work traits" such as Efficient Waterer, Curious Forager. | Replaced by Perks (conditional bonuses) and Advanced Traits (stat bonuses). |
+| Rarity affects gene probability, trait count, and visual effects. | Rarity is a derived descriptive score. Probabilities come only from configuration; attribute tiers affect visuals and collections, not stat budgets. |
+| "Rare mutations can introduce a gene not visibly present in either parent." | Renamed **attribute variation** (ordinary genes). "Mutation" now means the rare top-tier genetic layer. |
+| MVP "low-probability mutation". | Satisfied by attribute variation (Must). The full Mutation system is Should-have, gated behind its unlock. |
+| Glow as a single gene that can affect magical jobs. | Split into ordinary glow (attribute, budget 6) and Mutation glow effects. |
+| Stats "tuned through playtesting" with no derivation. | Stats are fully derived: attributes + traits + Mutation, capped at 100. |
+| Habitats "create opportunities to discover wild mushrooms". | Wild Visitors: temporary, ordinary-only donors; they do not join the collection in the MVP. |
+| Perk example "Dew Collector" vs job "Dew Collector". | Perk renamed Morning Dew. |
+| Social Craft listed last in progression, leaving Blue-group stats unused. | Pond, Root Hollow, and Community Clearing are a branching stage after the Workshop; Forager uses Local Discovery as its secondary stat. |
+| Day/night as a Should-have visual only. | A deterministic forest clock and weather are required once Perks ship. |
+| v0.1 Section 8.4 "never consume parents". | Retained and extended: parents are never modified by breeding. |
+
+---
+
+## Appendix B — Decisions awaiting approval
+
+| ID | Decision | Proposed default | Alternatives |
+|---|---|---|---|
+| D-1 | Base stat budgets and the equal total of 66 for all ordinary mushrooms | Equal totals; specialization through distribution | Let Rare attributes carry slightly higher budgets |
+| D-2 | Attribute contribution tables (Section 7.3) | As listed | Rebalance after a spreadsheet pass |
+| D-3 | Advanced Trait stat targeting | Uniform among eligible stats | Weight toward the offspring's top stats (faster specialization) |
+| D-4 | Donor genetics for locked systems | Inherited as dormant until unlocked | Ignored until unlocked; or fully active |
+| D-5 | Mutation unlock trigger | Moonstone Ring discovery or Generation 5 | Rare habitat only; Enchanted Landmark only |
+| D-6 | Re-exporting Guests | Not allowed; offspring can be exported | Allow with provenance tag |
+| D-7 | Perks and Mutations in MVP | Should-have (after the core breeding loop) | Must-have for the first public build |
+| D-8 | Releasing mushrooms ("Return to the Wild") | Not in MVP | Allow with two-step confirmation |
+| D-9 | Wild Visitors joining the collection | Breeding donors only | Can be befriended as residents |
+| D-10 | Forest day length and use of real-world time | 48-minute accelerated day | Real local time-of-day |
+| D-11 | Job effectiveness curve | 0.5× – 2.0× linear | Steeper or diminishing-returns curve |
+| D-12 | Probability defaults (Section 9.5) | As listed | Tune after simulation of 20+ generations |
+| D-13 | Affinity names and derivation | Highest final stat → 8 names | Keep v0.1 six names; derive from colour group |
+| D-14 | Breeding cost and free breedings | 3 free; then berries + leaves (+ spores) | Free breeding, time-gated only |
+| D-15 | Development stage order | Clearing → Fungal Patch → Workshop → {Pond, Root Hollow, Community} → Landmark | Strictly linear as in the brief |
