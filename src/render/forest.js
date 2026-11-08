@@ -11,6 +11,8 @@ import { makeRng } from '../core/rng.js';
 const LW = AREA_W * TILE;
 const LH = AREA_H * TILE;
 const SPEED = 14;
+// keep mushrooms clear of the hedge border that overlaps the scene's edges
+const EDGE = 20;
 
 const ANIM_FX = {
   water: '#8fd8ff', carry: '#c8955a', spores: '#d9c27a', hammer: '#ffe9a0', tend: '#f08cc0', dig: '#7a5434', glow: '#ffe066',
@@ -31,6 +33,10 @@ export class ForestView {
     this.terrainCache.canvas.width = LW;
     this.terrainCache.canvas.height = LH;
     this.rng = makeRng(Date.now() & 0xffff);
+    // painted grass backdrop (where the mushrooms live); relative URL works under a Pages subpath
+    this.grass = new Image();
+    this.grass.src = 'assets/art/grass.webp';
+    this.grass.onload = () => { this.terrainCache.key = null; };
     canvas.addEventListener('pointerdown', (e) => this.onPointer(e));
     canvas.addEventListener('pointermove', (e) => { this.hover = this.toTile(e); });
     canvas.addEventListener('pointerleave', () => { this.hover = null; });
@@ -38,13 +44,22 @@ export class ForestView {
   }
 
   resize() {
-    const parent = this.canvas.parentElement;
-    const w = parent ? parent.clientWidth : LW * 2;
+    // measure the space inside the hedge-framed wrapper
+    const wrap = this.app.canvasWrap;
+    let w = LW * 2;
+    if (wrap && wrap.clientWidth) {
+      const cs = getComputedStyle(wrap);
+      w = wrap.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    }
     this.scale = Math.max(1, Math.min(5, Math.floor(w / LW)));
-    this.canvas.width = LW * this.scale;
-    this.canvas.height = LH * this.scale;
+    // back the canvas at device resolution so the grass backdrop stays sharp;
+    // an integer multiple keeps the pixel art crisp
+    this.dpr = Math.max(1, Math.round(window.devicePixelRatio || 1));
+    this.canvas.width = LW * this.scale * this.dpr;
+    this.canvas.height = LH * this.scale * this.dpr;
     this.canvas.style.width = LW * this.scale + 'px';
     this.canvas.style.height = LH * this.scale + 'px';
+    this.terrainCache.key = null;
   }
 
   setArea(id) {
@@ -110,11 +125,11 @@ export class ForestView {
     const k = siblings.indexOf(m);
     const offsets = [[-6, 18], [22, 18], [8, 22]];
     const [ox, oy] = offsets[k % offsets.length];
-    return { x: Math.max(8, Math.min(LW - 8, obj.x * TILE + ox)), y: Math.min(LH - 1, obj.y * TILE + oy) };
+    return { x: Math.max(EDGE, Math.min(LW - EDGE, obj.x * TILE + ox)), y: Math.max(SPRITE_H + 6, Math.min(LH - 6, obj.y * TILE + oy)) };
   }
 
   randomSpot() {
-    return { x: 10 + this.rng.next() * (LW - 20), y: 30 + this.rng.next() * (LH - 34) };
+    return { x: EDGE + this.rng.next() * (LW - 2 * EDGE), y: SPRITE_H + 6 + this.rng.next() * (LH - SPRITE_H - 12) };
   }
 
   syncAgents(t) {
@@ -195,13 +210,30 @@ export class ForestView {
     const area = s.world.areas[this.areaId];
     if (!area) return;
     const rm = s.settings.reducedMotion;
-    ctx.setTransform(this.scale, 0, 0, this.scale, 0, 0);
+    const k = this.scale * (this.dpr || 1);
+    const backdrop = this.grass.complete && this.grass.naturalWidth > 0;
+    // 1. painted grass backdrop at full device resolution (cover-fit)
+    if (backdrop) {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      const cw = this.canvas.width;
+      const ch = this.canvas.height;
+      const gw = this.grass.naturalWidth;
+      const gh = this.grass.naturalHeight;
+      const sc = Math.max(cw / gw, ch / gh);
+      const sw = cw / sc;
+      const sh = ch / sc;
+      ctx.drawImage(this.grass, (gw - sw) / 2, (gh - sh) / 2, sw, sh, 0, 0, cw, ch);
+    }
+    ctx.setTransform(k, 0, 0, k, 0, 0);
     ctx.imageSmoothingEnabled = false;
-    // terrain (cached; water animates at 2 fps)
-    const tkey = this.areaId + area.tiles.join('') + (rm ? 0 : Math.floor(t * 2));
+    // 2. terrain features on top (grass tiles stay transparent; cached; water animates at 2 fps)
+    const tkey = this.areaId + area.tiles.join('') + (rm ? 0 : Math.floor(t * 2)) + backdrop;
     if (this.terrainCache.key !== tkey) {
       const tctx = this.terrainCache.canvas.getContext('2d');
-      for (let y = 0; y < AREA_H; y++) for (let x = 0; x < AREA_W; x++) drawTile(tctx, area.tiles[y][x], x, y, rm ? 0 : t);
+      tctx.clearRect(0, 0, LW, LH);
+      for (let y = 0; y < AREA_H; y++) for (let x = 0; x < AREA_W; x++) drawTile(tctx, area.tiles[y][x], x, y, rm ? 0 : t, 0, backdrop);
       this.terrainCache.key = tkey;
     }
     ctx.drawImage(this.terrainCache.canvas, 0, 0);
@@ -216,7 +248,7 @@ export class ForestView {
     // build overlay
     if (this.app.buildTool) {
       ctx.strokeStyle = 'rgba(255,255,255,0.18)';
-      ctx.lineWidth = 1 / this.scale;
+      ctx.lineWidth = 1 / k;
       for (let x = 0; x <= AREA_W; x++) { ctx.beginPath(); ctx.moveTo(x * TILE, 0); ctx.lineTo(x * TILE, LH); ctx.stroke(); }
       for (let y = 0; y <= AREA_H; y++) { ctx.beginPath(); ctx.moveTo(0, y * TILE); ctx.lineTo(LW, y * TILE); ctx.stroke(); }
       if (this.hover) {

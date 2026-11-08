@@ -14,11 +14,27 @@ function noise(x, y, s = 0) {
   return ((n ^ (n >>> 16)) >>> 0) / 4294967296;
 }
 
-export function drawTile(ctx, code, tx, ty, t, seed = 0) {
+// With a painted grass backdrop, grass tiles are left transparent and leafy
+// ground types are drawn translucent so the grass texture shows through.
+const BACKDROP_ALPHA = { g: 0, m: 0.5, h: 0.62, l: 0.78 };
+
+export function drawTile(ctx, code, tx, ty, t, seed = 0, backdrop = false) {
   const T = TERRAIN[code] || TERRAIN.g;
   const x0 = tx * TILE;
   const y0 = ty * TILE;
-  r(ctx, T.color, x0, y0, TILE, TILE);
+  if (backdrop && code in BACKDROP_ALPHA) {
+    if (code === 'g') {
+      if (noise(tx, ty, 77 + seed) > 0.9) {
+        const nx = Math.floor(noise(tx, ty, 78) * 12) + 2;
+        const ny = Math.floor(noise(ty, tx, 79) * 12) + 2;
+        r(ctx, ['#f6e27a', '#f09ac0', '#ffffff', '#9ac8ff'][Math.floor(noise(tx, ty, 80) * 4)], x0 + nx, y0 + ny, 1, 1);
+      }
+      return;
+    }
+    ctx.globalAlpha = BACKDROP_ALPHA[code];
+    r(ctx, T.color, x0, y0, TILE, TILE);
+    ctx.globalAlpha = 1;
+  } else r(ctx, T.color, x0, y0, TILE, TILE);
   for (let i = 0; i < 7; i++) {
     const nx = Math.floor(noise(tx, ty, i + seed) * 15);
     const ny = Math.floor(noise(ty, tx, i + 9 + seed) * 15);

@@ -58,3 +58,12 @@ Key guarantees (see GDD Section 20): breeding outcomes are resolved and sealed
 when incubation starts; stats are always recalculated from genetics (never
 trusted from saves or imports); every cap is enforced in simulation code;
 offline progress is clamped to 8 hours and a backward clock grants nothing.
+
+## Art and font credits
+
+- **Pixeloid** font by GGBotNet (<https://ggbot.net/fonts/>), licensed under the
+  SIL Open Font License 1.1 — see `assets/fonts/OFL-LICENSE.txt`.
+- Grass backdrop (`assets/art/grass.webp`) and shrubbery border
+  (`assets/art/hedge-strip*.webp`) supplied by the project owner; trimmed and
+  rotated copies of the originals.
+- Mushrooms, structures and terrain features are drawn procedurally in code.

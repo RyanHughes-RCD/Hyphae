@@ -133,7 +133,8 @@ export class App {
     this.main = h('main', { class: 'screen' });
     this.canvasWrap = h('div', { class: 'forest-canvas-wrap' });
     this.canvas = h('canvas', { class: 'forest-canvas', 'aria-label': 'Forest scene. Tap a mushroom or structure.' });
-    this.canvasWrap.appendChild(this.canvas);
+    this.canvasWrap.appendChild(h('div', { class: 'hedge-frame' }, this.canvas,
+      ['top', 'bottom', 'left', 'right'].map((side) => h('div', { class: `hedge ${side}`, 'aria-hidden': 'true' }))));
     this.nav = h('nav', { class: 'bottomnav' }, NAV.map((n) => h('button', { type: 'button', class: 'nav-btn', dataset: { id: n.id }, onclick: () => this.go(n.id) }, h('span', { class: 'nav-icon', 'aria-hidden': 'true' }, n.icon), h('span', {}, n.label))));
     this.modalRoot = h('div', { class: 'modal-root' });
     this.toastRoot = h('div', { class: 'toast-root', 'aria-live': 'polite' });
