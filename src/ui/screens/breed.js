@@ -4,7 +4,7 @@ import { getConfig, STATS, STAT_NAMES } from '../../config.js';
 import { ATTRIBUTE_BY_ID, CATEGORIES, CATEGORY_NAMES } from '../../content/attributes.js';
 import { PERK_BY_ID, MUTATION_BY_ID, TRAIT_NAMES } from '../../content/genetics.js';
 import { BREEDING_STATIONS } from '../../content/world.js';
-import { drawMushroom, SPRITE_W, SPRITE_H } from '../../render/sprites.js';
+import { drawMushroom, spriteCanvas, SPRITE_W, SPRITE_H } from '../../render/sprites.js';
 import { hex } from '../../core/color.js';
 import { h, costView, mushroomCard, mushroomThumb, section, fmtDuration, empty } from '../common.js';
 
@@ -33,21 +33,13 @@ export function renderBreed(app) {
       h('button', { type: 'button', class: 'btn primary', disabled: !ready, onclick: () => claim(app, r.id) }, 'Hatch'));
   });
 
-  const slot = (which, m) => h('div', { class: 'parent-slot' },
-    m ? mushroomCard(app, m, { onclick: () => pickParent(app, which) }) : h('button', { type: 'button', class: 'm-card empty-slot', onclick: () => pickParent(app, which) }, h('span', { class: 'plus' }, '+'), `Choose parent ${which.toUpperCase()}`));
-
   const canBreed = a && b && active.length < station.slots;
   return h('div', {},
     h('h2', { class: 'screen-title' }, 'Breeding'),
-    section(stationDef.name,
-      h('p', { class: 'small' }, `${active.length}/${station.slots} incubation slot(s) · incubation ${fmtDuration(getConfig().breeding.incubationMinutes * 60000 * station.speed)} · cost: `, cost ? costView(s, { glimmer: cost }) : h('b', {}, 'Free (first breeding)')),
-      next ? h('div', { class: 'list-row' }, h('div', {}, h('b', {}, `Upgrade to ${BREEDING_STATIONS[next].name}`), h('div', { class: 'small' }, next === 'spore_cradle' ? 'Unlocks Perks, +1 slot, 10% faster.' : '+1 slot, 25% faster, small discount.'), costView(s, BREEDING_STATIONS[next].cost),
-        BREEDING_STATIONS[next].requiresStage && !G.stageComplete(s, BREEDING_STATIONS[next].requiresStage) ? h('div', { class: 'small warn' }, 'Requires a later area of the forest.') : null),
-      h('button', { type: 'button', class: 'btn', onclick: () => app.act(() => G.upgradeStation(s, app.now())) }, 'Upgrade')) : null),
-    incub.length ? section('Incubating', incub) : null,
-    section('New pairing',
-      h('div', { class: 'parents' }, slot('a', a), h('div', { class: 'times', 'aria-hidden': 'true' }, '×'), slot('b', b)),
-      a && b ? inheritanceHints(app, a, b) : h('p', { class: 'small' }, 'Pick any two mushrooms. Parents are never used up — they stay in your forest and keep working.'),
+    section('Breeding pen',
+      pen(app, a, b),
+      tray(app),
+      a && b ? inheritanceHints(app, a, b) : h('p', { class: 'small' }, 'Drag two mushrooms into the pen (or tap them). Parents are never used up — they stay in your forest and keep working.'),
       h('div', { class: 'row gap' },
         h('button', {
           type: 'button', class: 'btn primary big', disabled: !canBreed,
@@ -55,8 +47,14 @@ export function renderBreed(app) {
             const r = app.act(() => G.startBreeding(s, a.uid, b.uid, app.now()), 'A spore cluster begins to grow…');
             if (r.ok) { app.ui.breed = { a: null, b: null }; app.render(); }
           },
-        }, cost ? `Begin breeding (${cost} Glimmer)` : 'Begin breeding (free)'),
-        a || b ? h('button', { type: 'button', class: 'btn', onclick: () => { app.ui.breed = { a: null, b: null }; app.render(); } }, 'Clear') : null)),
+        }, active.length >= station.slots ? 'Incubator full' : cost ? `Begin breeding (${cost} Glimmer)` : 'Begin breeding (free)'),
+        a || b ? h('button', { type: 'button', class: 'btn', onclick: () => { app.ui.breed = { a: null, b: null }; app.render(); } }, 'Empty pen') : null)),
+    incub.length ? section('Incubating', incub) : null,
+    section(stationDef.name,
+      h('p', { class: 'small' }, `${active.length}/${station.slots} incubation slot(s) · incubation ${fmtDuration(getConfig().breeding.incubationMinutes * 60000 * station.speed)} · cost: `, cost ? costView(s, { glimmer: cost }) : h('b', {}, 'Free (first breeding)')),
+      next ? h('div', { class: 'list-row' }, h('div', {}, h('b', {}, `Upgrade to ${BREEDING_STATIONS[next].name}`), h('div', { class: 'small' }, next === 'spore_cradle' ? 'Unlocks Perks, +1 slot, 10% faster.' : '+1 slot, 25% faster, small discount.'), costView(s, BREEDING_STATIONS[next].cost),
+        BREEDING_STATIONS[next].requiresStage && !G.stageComplete(s, BREEDING_STATIONS[next].requiresStage) ? h('div', { class: 'small warn' }, 'Requires a later area of the forest.') : null),
+      h('button', { type: 'button', class: 'btn', onclick: () => app.act(() => G.upgradeStation(s, app.now())) }, 'Upgrade')) : null),
     recent(app),
   );
 }
@@ -70,28 +68,132 @@ function recent(app) {
   })));
 }
 
-function pickParent(app, which) {
+// ---------------------------------------------------------------- the pen (drag and drop)
+
+/** Why `m` can't go into pen slot `which` right now (null = it can). */
+function penProblem(app, m, which) {
   const s = app.state;
-  const now = app.now();
   const other = which === 'a' ? app.ui.breed.b : app.ui.breed.a;
-  const otherOwned = other ? G.isOwned(s, other) : true;
+  const reason = G.breedIneligibility(s, m, app.now());
+  if (reason) return reason;
+  if (other && other !== m.uid && !G.isOwned(s, m.uid) && !G.isOwned(s, other)) return 'One parent must be your own mushroom.';
+  return null;
+}
+
+/** Put a mushroom in the pen: into `slot`, or the first free slot. Moving between slots swaps. */
+function addToPen(app, uid, slot = null) {
+  const sel = app.ui.breed;
+  const m = G.findMushroom(app.state, uid);
+  if (!m) return;
+  const from = sel.a === uid ? 'a' : sel.b === uid ? 'b' : null;
+  if (!slot) slot = !sel.a ? 'a' : !sel.b ? 'b' : null;
+  if (!slot) { app.toast('The pen is full — drag one out first.', 'error'); return; }
+  if (from === slot) return;
+  if (from) { const other = sel[slot]; sel[slot] = uid; sel[from] = other; app.render(); return; }
+  const problem = penProblem(app, m, slot);
+  if (problem) { app.toast(`${m.name}: ${problem}`, 'error'); return; }
+  sel[slot] = uid;
+  app.render();
+}
+
+function removeFromPen(app, slot) {
+  app.ui.breed[slot] = null;
+  app.render();
+}
+
+/**
+ * Pointer-based drag (works with mouse and touch). A short tap calls `onTap`;
+ * a drag shows a ghost under the finger and calls `onDrop(target)` on release.
+ */
+function draggable(el, { ghost, onTap, onDrop }) {
+  el.addEventListener('pointerdown', (e) => {
+    if (e.button !== undefined && e.button !== 0) return;
+    const start = { x: e.clientX, y: e.clientY };
+    let g = null;
+    el.setPointerCapture?.(e.pointerId);
+    const penEl = () => document.querySelector('.pen');
+    const move = (ev) => {
+      if (!g && Math.hypot(ev.clientX - start.x, ev.clientY - start.y) > 6) {
+        g = document.createElement('div');
+        g.className = 'drag-ghost';
+        g.appendChild(ghost());
+        document.body.appendChild(g);
+        el.classList.add('dragging');
+      }
+      if (g) {
+        g.style.left = ev.clientX + 'px';
+        g.style.top = ev.clientY + 'px';
+        const p = penEl();
+        if (p) p.classList.toggle('over', isOver(p, ev));
+      }
+    };
+    const up = (ev) => {
+      el.removeEventListener('pointermove', move);
+      el.removeEventListener('pointerup', up);
+      el.removeEventListener('pointercancel', up);
+      el.classList.remove('dragging');
+      if (!g) { if (ev.type === 'pointerup') onTap?.(); return; }
+      g.remove();
+      const p = penEl();
+      p?.classList.remove('over');
+      const under = document.elementFromPoint(ev.clientX, ev.clientY);
+      const slotEl = under?.closest?.('.pen-slot');
+      onDrop({ inPen: !!(p && isOver(p, ev)), slot: slotEl?.dataset.slot || null });
+    };
+    el.addEventListener('pointermove', move);
+    el.addEventListener('pointerup', up);
+    el.addEventListener('pointercancel', up);
+  });
+}
+
+function isOver(el, ev) {
+  const r = el.getBoundingClientRect();
+  return ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom;
+}
+
+function pen(app, a, b) {
+  const slotEl = (which, m) => {
+    if (!m) return h('div', { class: 'pen-slot empty', dataset: { slot: which } }, h('span', { class: 'small' }, 'Drop a mushroom here'));
+    const el = h('div', { class: 'pen-slot filled', dataset: { slot: which } },
+      mushroomThumb(app, m, 4),
+      h('b', { class: 'pen-name' }, m.name),
+      h('button', { type: 'button', class: 'pen-remove', 'aria-label': `Take ${m.name} out of the pen`, onpointerdown: (e) => e.stopPropagation(), onclick: () => removeFromPen(app, which) }, '×'));
+    draggable(el, {
+      ghost: () => mushroomThumb(app, m, 4),
+      onTap: () => app.openMushroom(m.uid),
+      onDrop: ({ inPen, slot }) => (inPen ? addToPen(app, m.uid, slot || which) : removeFromPen(app, which)),
+    });
+    return el;
+  };
+  return h('div', { class: 'pen', 'aria-label': 'Breeding pen' }, slotEl('a', a), h('div', { class: 'pen-heart', 'aria-hidden': 'true' }, '♥'), slotEl('b', b));
+}
+
+function tray(app) {
+  const s = app.state;
+  const sel = app.ui.breed;
   const groups = [
     ['Residents', G.residents(s)],
     ['Spore Archive', s.mushrooms.filter((m) => m.status === 'archived')],
     ['Guests', s.guests],
     ['Wild Visitors', s.wildVisitors.map((v) => v.mushroom)],
-  ];
-  const md = app.modal(h('div', {}, groups.filter(([, l]) => l.length).map(([label, list]) => h('div', {},
-    h('h3', { class: 'sub' }, label),
-    h('div', { class: 'card-grid' }, list.map((m) => {
-      let reason = G.breedIneligibility(s, m, now);
-      if (m.uid === other) reason = 'Already chosen';
-      if (!reason && !G.isOwned(s, m.uid) && !otherOwned) reason = 'Needs one of your own mushrooms as the other parent';
-      return mushroomCard(app, m, {
-        disabled: !!reason, disabledReason: reason,
-        onclick: () => { if (reason) { app.toast(reason, 'error'); return; } app.ui.breed[which] = m.uid; md.close(); app.render(); },
+  ].filter(([, l]) => l.length);
+  return h('div', { class: 'tray' }, groups.map(([label, list]) => h('div', {},
+    h('h4', { class: 'tray-label' }, label),
+    h('div', { class: 'tray-row' }, list.map((m) => {
+      const inPen = sel.a === m.uid || sel.b === m.uid;
+      const reason = inPen ? null : G.breedIneligibility(s, m, app.now());
+      const chip = h('div', { class: 'tray-chip' + (inPen ? ' in-pen' : '') + (reason ? ' ineligible' : ''), title: reason || `Drag ${m.name} into the pen`, role: 'button', tabindex: 0,
+        onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); addToPen(app, m.uid); } } },
+      mushroomThumb(app, m, 2), h('span', { class: 'tray-name' }, m.name), reason ? h('span', { class: 'tray-why' }, reason) : null);
+      if (inPen) return chip;
+      if (reason) { chip.addEventListener('click', () => app.toast(`${m.name}: ${reason}`, 'error')); return chip; }
+      draggable(chip, {
+        ghost: () => mushroomThumb(app, m, 3),
+        onTap: () => addToPen(app, m.uid),
+        onDrop: ({ inPen: over, slot }) => { if (over) addToPen(app, m.uid, slot); },
       });
-    }))))), { title: `Choose parent ${which.toUpperCase()}`, wide: true });
+      return chip;
+    })))));
 }
 
 function inheritanceHints(app, a, b) {
@@ -134,9 +236,7 @@ function claim(app, id) {
 function reveal(app, m, rec) {
   const s = app.state;
   const log = rec.log;
-  const scale = 5;
-  const c = h('canvas', { class: 'sprite big', width: SPRITE_W + 16, height: SPRITE_H + 8, style: { width: `${(SPRITE_W + 16) * scale}px`, height: `${(SPRITE_H + 8) * scale}px` } });
-  const ctx = c.getContext('2d');
+  const { canvas: c, ctx } = spriteCanvas(SPRITE_W + 16, SPRITE_H + 8, 5, 'sprite big');
   const start = performance.now();
   const mv = s.unlocks.mutations && m.mutation ? MUTATION_BY_ID[m.mutation.mutationId].visual : null;
   const rm = s.settings.reducedMotion;
@@ -144,7 +244,7 @@ function reveal(app, m, rec) {
   const loop = (ts) => {
     if (!c.isConnected && ts - start > 500) return;
     const e = rm ? 3 : (ts - start) / 1000;
-    ctx.clearRect(0, 0, c.width, c.height);
+    ctx.clearRect(0, 0, SPRITE_W + 16, SPRITE_H + 8);
     ctx.imageSmoothingEnabled = false;
     if (e < 1.3) {
       const p = 1 + Math.sin(e * 14) * 0.08 * e;

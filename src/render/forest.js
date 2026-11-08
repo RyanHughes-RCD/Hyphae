@@ -5,7 +5,11 @@ import { AREA_W, AREA_H, STRUCTURES, JOB_BY_ID } from '../content/world.js';
 import { MUTATION_BY_ID } from '../content/genetics.js';
 import { getConfig } from '../config.js';
 import { drawTile, drawStructure, TILE } from './world.js';
-import { drawMushroom, SPRITE_W, SPRITE_H, resourceColor } from './sprites.js';
+import { drawMushroom, SPRITE_W as FULL_W, SPRITE_H as FULL_H, MUSHROOM_SCALE, resourceColor } from './sprites.js';
+
+// mushrooms are drawn at 65% of their sprite size in the forest
+const SPRITE_W = FULL_W * MUSHROOM_SCALE;
+const SPRITE_H = FULL_H * MUSHROOM_SCALE;
 import { conditionsAt } from '../core/time.js';
 import { makeRng, hash } from '../core/rng.js';
 
@@ -24,7 +28,7 @@ const ZOOM_RANGE = 4; // max zoom = fit zoom × this
 const TAP_SLOP = 7; // CSS px a pointer may move and still count as a tap
 const GRASS_TILE = 160; // logical px covered by one copy of the grass painting
 const CANOPY_TILE = 600; // logical px covered by one copy of the canopy shadow (large, soft light gaps)
-const RIM = 24; // thickness of the hedge wall at the map's edge (logical px)
+const RIM = 20; // thickness of the hedge wall at the map's edge (logical px)
 const FOLIAGE_ROW = 26; // height of one row of bushes in the undergrowth beyond the map
 
 // dappled canopy light and sun rays by time of day: shade/light opacity, light tint, ray strength
@@ -235,23 +239,6 @@ export class ForestView {
     return { areaId: hit[0], x: Math.floor((wx - cx * LW) / TILE), y: Math.floor((wy - cy * LH) / TILE) };
   }
 
-  /** Signposts at every open edge of every clearing: where the forest can grow. */
-  signposts() {
-    const out = [];
-    const G = this.app.game;
-    for (const { id, area, ox, oy } of this.areas()) {
-      for (const dir of ['north', 'east', 'south', 'west']) {
-        const d = G.DIRECTIONS[dir];
-        if (G.areaAt(this.app.state, area.cx + d.dx, area.cy + d.dy)) continue;
-        // on the hedge wall at the middle of the open edge
-        const x = ox + LW / 2 + d.dx * (LW / 2 + 2);
-        const y = oy + LH / 2 + d.dy * (LH / 2) + (d.dy < 0 ? 6 : d.dy > 0 ? 8 : 8);
-        out.push({ areaId: id, dir, x, y, ready: G.expansionOption(this.app.state, id, dir).ok });
-      }
-    }
-    return out;
-  }
-
   // ------------------------------------------------------------- input
   onDown(e) {
     this.canvas.setPointerCapture?.(e.pointerId);
@@ -342,11 +329,11 @@ export class ForestView {
       this.app.onTapMushroom(hits[0].uid);
       return;
     }
-    const post = this.signposts().find((sp) => Math.abs(w.x - sp.x) < 10 && w.y > sp.y - 20 && w.y < sp.y + 4);
-    if (post) { this.app.onTapSignpost(post.areaId, post.dir); return; }
     if (!inArea) return;
-    const obj = this.app.state.world.areas[t.areaId].objects.find((o) => o.x === t.x && o.y === t.y);
+    const area = this.app.state.world.areas[t.areaId];
+    const obj = area.objects.find((o) => o.x === t.x && o.y === t.y);
     if (obj) this.app.onTapObject(obj.id);
+    else if (area.tiles[t.y][t.x] === 'u') this.app.onTapThicket(t.areaId, t.x, t.y);
   }
 
   // ------------------------------------------------------------- mushrooms
@@ -371,7 +358,7 @@ export class ForestView {
     const o = this.areaOrigin(found.areaId);
     const siblings = this.app.state.mushrooms.filter((x) => x.work?.structureId === obj.id);
     const k = siblings.indexOf(m);
-    const offsets = [[-6, 18], [22, 18], [8, 22]];
+    const offsets = [[-3, 17], [19, 17], [8, 20]];
     const [ox, oy] = offsets[k % offsets.length];
     return { x: o.x + clamp(obj.x * TILE + ox, EDGE, LW - EDGE), y: o.y + clamp(obj.y * TILE + oy, SPRITE_H, LH - 4) };
   }
@@ -588,8 +575,6 @@ export class ForestView {
 
     // 4. the edge of the map: dense undergrowth beyond, hedge walls along every open side
     this.drawBorders(ctx, view, areas);
-    if (!this.postCache || t - this.postCache.t > 0.5) this.postCache = { t, posts: this.signposts() };
-    for (const sp of this.postCache.posts) if (inView(sp.x, sp.y)) drawSignpost(ctx, sp, t, rm);
 
     // 5. light through the treetops: drifting canopy shade with sunlit gaps
     const lightOn = s.settings.canopyLight !== false;
@@ -661,44 +646,60 @@ export class ForestView {
     }
   }
 
-  /** Undergrowth fills every cell outside the map; hedge walls line each open edge. */
+  /** Undergrowth fills thicket tiles and everything outside the map; hedge walls line its ragged edge. */
   drawBorders(ctx, view, areas) {
-    const occ = new Set(areas.map((a) => a.area.cx + ',' + a.area.cy));
+    const s = this.app.state;
+    const occ = new Map(areas.map((a) => [a.area.cx + ',' + a.area.cy, a.area]));
+    const blocked = (gx, gy) => {
+      const a = occ.get(Math.floor(gx / AREA_W) + ',' + Math.floor(gy / AREA_H));
+      if (!a) return true;
+      return a.tiles[gy - a.cy * AREA_H][gx - a.cx * AREA_W] === 'u';
+    };
     ctx.imageSmoothingEnabled = true;
-    // undergrowth in every empty cell in view
+    if (this.foliage && !this.foliage._pattern) {
+      const pt = ctx.createPattern(this.foliage, 'repeat');
+      if (pt) { pt.setTransform(new DOMMatrix().scaleSelf(this.foliage.world, this.foliage.world)); this.foliage._pattern = pt; }
+    }
+    ctx.fillStyle = this.foliage?._pattern || '#1d3322';
+    // empty cells beyond the map
     const cx0 = Math.floor(view.x0 / LW);
     const cx1 = Math.floor((view.x0 + view.w) / LW);
     const cy0 = Math.floor(view.y0 / LH);
     const cy1 = Math.floor((view.y0 + view.h) / LH);
-    if (this.foliage) {
-      if (!this.foliage._pattern) {
-        this.foliage._pattern = ctx.createPattern(this.foliage, 'repeat');
-        this.foliage._pattern.setTransform(new DOMMatrix().scaleSelf(this.foliage.world, this.foliage.world));
-      }
-      ctx.fillStyle = this.foliage._pattern;
-    } else ctx.fillStyle = '#1d3322';
     for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) {
       if (!occ.has(cx + ',' + cy)) ctx.fillRect(cx * LW - 0.5, cy * LH - 0.5, LW + 1, LH + 1);
     }
-    // hedge walls: straddle each open edge, bushes facing into the clearing
+    // thicket tiles inside clearings
+    const visible = areas.filter(({ ox, oy }) => !(ox > view.x0 + view.w + RIM || ox + LW < view.x0 - RIM || oy > view.y0 + view.h + RIM || oy + LH < view.y0 - RIM));
+    for (const { area, ox, oy } of visible) {
+      for (let y = 0; y < AREA_H; y++) for (let x = 0; x < AREA_W; x++) if (area.tiles[y][x] === 'u') ctx.fillRect(ox + x * TILE - 0.5, oy + y * TILE - 0.5, TILE + 1, TILE + 1);
+    }
+    // hedge walls along every edge between open ground and undergrowth (patterns anchored to the world, so segments join up)
     const strip = (img, x, y, w, h, vertical) => {
       if (!img?.naturalWidth) return;
       if (!img._pattern) img._pattern = ctx.createPattern(img, vertical ? 'repeat-y' : 'repeat-x');
-      const sc = vertical ? w / img.naturalWidth : h / img.naturalHeight;
-      img._pattern.setTransform(new DOMMatrix().translateSelf(x, y).scaleSelf(sc, sc));
+      if (!img._pattern) return; // not decoded yet
+      const sc = vertical ? RIM / img.naturalWidth : RIM / img.naturalHeight;
+      img._pattern.setTransform(new DOMMatrix().translateSelf(vertical ? x : 0, vertical ? 0 : y).scaleSelf(sc, sc));
       ctx.fillStyle = img._pattern;
       ctx.fillRect(x, y, w, h);
     };
-    const inner = RIM * 0.4; // how far the wall reaches into the clearing
-    for (const { area, ox, oy } of areas) {
-      if (ox > view.x0 + view.w + RIM || ox + LW < view.x0 - RIM || oy > view.y0 + view.h + RIM || oy + LH < view.y0 - RIM) continue;
-      const open = (dx, dy) => !occ.has((area.cx + dx) + ',' + (area.cy + dy));
-      if (open(-1, 0)) strip(this.hedges.west, ox - RIM + inner, oy - inner, RIM, LH + 2 * inner, true);
-      if (open(1, 0)) strip(this.hedges.east, ox + LW - inner, oy - inner, RIM, LH + 2 * inner, true);
-      if (open(0, -1)) strip(this.hedges.north, ox - inner, oy - RIM + inner, LW + 2 * inner, RIM, false);
-      if (open(0, 1)) strip(this.hedges.south, ox - inner, oy + LH - inner, LW + 2 * inner, RIM, false);
+    const inner = RIM * 0.4; // how far the wall reaches over the open ground
+    for (const { area, ox, oy } of visible) {
+      for (let y = 0; y < AREA_H; y++) for (let x = 0; x < AREA_W; x++) {
+        if (area.tiles[y][x] === 'u') continue;
+        const gx = area.cx * AREA_W + x;
+        const gy = area.cy * AREA_H + y;
+        const px = ox + x * TILE;
+        const py = oy + y * TILE;
+        if (blocked(gx, gy - 1)) strip(this.hedges.north, px - inner * 0.5, py - RIM + inner, TILE + inner, RIM, false);
+        if (blocked(gx, gy + 1)) strip(this.hedges.south, px - inner * 0.5, py + TILE - inner, TILE + inner, RIM, false);
+        if (blocked(gx - 1, gy)) strip(this.hedges.west, px - RIM + inner, py - inner * 0.5, RIM, TILE + inner, true);
+        if (blocked(gx + 1, gy)) strip(this.hedges.east, px + TILE - inner, py - inner * 0.5, RIM, TILE + inner, true);
+      }
     }
     ctx.imageSmoothingEnabled = false;
+    void s;
   }
 
   /** Canopy shade over everything, in world space so it pans and zooms with the forest. */
@@ -767,19 +768,19 @@ export class ForestView {
     const mv = this.app.state.unlocks.mutations && m.mutation ? MUTATION_BY_ID[m.mutation.mutationId]?.visual : null;
     const sy = this.squishOf(a, t, rm);
     const sx = 1 / Math.sqrt(sy) * (sy < 1 ? 1 + (1 - sy) * 0.6 : 1);
-    drawMushroom(ctx, m, a.x - SPRITE_W / 2, a.y - SPRITE_H, t, { smooth: true, squish: { sx, sy }, flip: a.flip, mutationVisual: mv, reducedMotion: rm });
+    drawMushroom(ctx, m, a.x - FULL_W / 2, a.y - FULL_H, t, { smooth: true, size: MUSHROOM_SCALE, squish: { sx, sy }, flip: a.flip, mutationVisual: mv, reducedMotion: rm });
     const top = a.y - SPRITE_H * sy;
     if (a.carry) { ctx.fillStyle = '#2a1a10'; ctx.fillRect(a.x - 2.5, top - 5, 5, 5); ctx.fillStyle = a.carry; ctx.fillRect(a.x - 1.5, top - 4, 3, 3); }
     if (a.mode === 'work' && !rm) {
       const col = ANIM_FX[a.anim] || '#fff';
       const ph = (t * 1.5 + a.seed) % 1;
       ctx.fillStyle = col;
-      if (a.anim === 'water') ctx.fillRect(a.x + 9, a.y - 14 + ph * 10, 1, 2);
-      else if (a.anim === 'spores') { ctx.globalAlpha = 1 - ph; ctx.fillRect(a.x - 6 + ph * 12, a.y - 20 - ph * 8, 1, 1); ctx.fillRect(a.x + 4 - ph * 8, a.y - 16 - ph * 6, 1, 1); ctx.globalAlpha = 1; }
-      else if (a.anim === 'hammer') { if (ph < 0.2) { ctx.fillRect(a.x + 10, a.y - 12, 2, 1); ctx.fillRect(a.x + 12, a.y - 14, 1, 1); } }
-      else if (a.anim === 'dig') ctx.fillRect(a.x + 8 + ph * 4, a.y - 4 - Math.sin(ph * 3) * 6, 1, 1);
-      else if (a.anim === 'glow') { ctx.globalAlpha = 0.5 + 0.5 * Math.sin(t * 4); ctx.fillRect(a.x - 9, a.y - 22, 1, 1); ctx.fillRect(a.x + 9, a.y - 18, 1, 1); ctx.globalAlpha = 1; }
-      else if (a.anim === 'tend') { if (ph < 0.5) ctx.fillRect(a.x + 8, a.y - 26 + ph * 4, 2, 2); }
+      if (a.anim === 'water') ctx.fillRect(a.x + 6, a.y - 9 + ph * 7, 1, 2);
+      else if (a.anim === 'spores') { ctx.globalAlpha = 1 - ph; ctx.fillRect(a.x - 4 + ph * 8, a.y - 13 - ph * 5, 1, 1); ctx.fillRect(a.x + 3 - ph * 5, a.y - 10 - ph * 4, 1, 1); ctx.globalAlpha = 1; }
+      else if (a.anim === 'hammer') { if (ph < 0.2) { ctx.fillRect(a.x + 7, a.y - 8, 2, 1); ctx.fillRect(a.x + 8, a.y - 9, 1, 1); } }
+      else if (a.anim === 'dig') ctx.fillRect(a.x + 5 + ph * 3, a.y - 3 - Math.sin(ph * 3) * 4, 1, 1);
+      else if (a.anim === 'glow') { ctx.globalAlpha = 0.5 + 0.5 * Math.sin(t * 4); ctx.fillRect(a.x - 6, a.y - 14, 1, 1); ctx.fillRect(a.x + 6, a.y - 12, 1, 1); ctx.globalAlpha = 1; }
+      else if (a.anim === 'tend') { if (ph < 0.5) ctx.fillRect(a.x + 5, a.y - 17 + ph * 3, 2, 2); }
     }
     if (a.mode === 'sleep') {
       ctx.fillStyle = '#e0e8ff';
@@ -795,39 +796,6 @@ export class ForestView {
   }
 }
 
-/** A little wooden signpost pointing the way the forest could grow. */
-function drawSignpost(ctx, sp, t, rm) {
-  const x = sp.x;
-  const y = sp.y;
-  const bob = sp.ready && !rm ? Math.sin(t * 4) * 0.8 : 0;
-  ctx.fillStyle = 'rgba(0,0,0,0.25)';
-  ctx.fillRect(x - 4, y - 1, 8, 2);
-  ctx.fillStyle = '#5a3a1e';
-  ctx.fillRect(x - 1, y - 14, 2, 14);
-  if (sp.ready) {
-    ctx.fillStyle = `rgba(255,215,94,${rm ? 0.5 : 0.35 + 0.25 * Math.sin(t * 4)})`;
-    ctx.fillRect(x - 9, y - 22 + bob, 18, 11);
-  }
-  ctx.fillStyle = sp.ready ? '#e0b060' : '#b07a44';
-  ctx.fillRect(x - 7, y - 20 + bob, 14, 7);
-  ctx.fillStyle = '#5a3a1e';
-  ctx.fillRect(x - 7, y - 14 + bob, 14, 1);
-  // arrow
-  ctx.fillStyle = '#3a240e';
-  const ay = y - 17 + bob;
-  const dirs = { east: [1, 0], west: [-1, 0], north: [0, -1], south: [0, 1] };
-  const [dx, dy] = dirs[sp.dir];
-  if (dx) {
-    ctx.fillRect(x - 4, ay, 8, 1);
-    ctx.fillRect(x + 3 * dx, ay - 1, 1, 3);
-    ctx.fillRect(x + 2 * dx, ay - 2, 1, 5);
-  } else {
-    ctx.fillRect(x, ay - 2, 1, 5);
-    ctx.fillRect(x - 1, ay + 1 * dy, 3, 1);
-    ctx.fillRect(x - 2, ay + 0 * dy, 5, 1);
-  }
-}
-
 function clamp(v, lo, hi) {
   return Math.max(lo, Math.min(hi, v));
 }
@@ -836,6 +804,7 @@ function clamp(v, lo, hi) {
 function tile(ctx, img, tw, th, offX, offY, view) {
   if (!img._pattern) img._pattern = ctx.createPattern(img, 'repeat');
   const pat = img._pattern;
+  if (!pat) return;
   pat.setTransform(new DOMMatrix().translateSelf(offX, offY).scaleSelf(tw / img.width, th / img.height));
   ctx.fillStyle = pat;
   ctx.fillRect(view.x0, view.y0, view.w, view.h);

@@ -297,6 +297,7 @@ test('16. jobs remain locked until discovery and construction conditions are met
   assert.equal(G.stageDiscovered(s, 'fungal'), false);
   assert.ok(G.expandForest(s, 'clearing', 'east', NOW + 1).ok);
   assert.ok(G.stageDiscovered(s, 'fungal'));
+  G.devConnectAll(s); // bridge the river / clear thicket on the way
   // discovery alone is not enough
   assert.equal(G.jobUnlocked(s, 'mycologist'), false);
   // construction (restoration) completes the unlock

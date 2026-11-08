@@ -303,3 +303,28 @@ textarea.code { font-family: "Pixeloid Mono", ui-monospace, monospace; font-size
 .dir-grid.single .dir-btn { grid-area: auto; }
 .dir-centre { grid-area: c; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; border-radius: 12px; background: #3a5a30; padding: 6px; }
 @media (prefers-reduced-motion: reduce) { .fv-pill.ready { animation: none; } }
+
+/* breeding pen (drag and drop) */
+.pen { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 6px; padding: 12px; min-height: 172px;
+  background: linear-gradient(rgba(20, 40, 20, 0.15), rgba(20, 40, 20, 0.15)), url("assets/art/grass.webp") center / 220px auto;
+  border: 8px solid #8a5a32; border-image: repeating-linear-gradient(90deg, #a8743a 0 14px, #6a4426 14px 17px) 8; box-shadow: inset 0 0 0 2px #5a3a1e, 0 3px 10px rgba(0, 0, 0, 0.35);
+  transition: box-shadow 0.15s; }
+.pen.over { box-shadow: inset 0 0 0 2px #5a3a1e, 0 0 0 4px var(--accent); }
+.pen-heart { color: #f08cb0; font-size: 22.5px; text-shadow: 0 2px 0 #5a2a3a; }
+.pen-slot { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 140px; border-radius: 12px; text-align: center; padding: 6px; }
+.pen-slot.empty { border: 2px dashed rgba(255, 255, 255, 0.55); background: rgba(0, 0, 0, 0.18); color: #f1ead8; }
+.pen-slot.filled { touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; }
+.pen-slot.filled.dragging { opacity: 0.35; }
+.pen-name { background: rgba(20, 28, 18, 0.8); padding: 2px 8px; border-radius: 999px; margin-top: 2px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pen-remove { position: absolute; top: 2px; right: 2px; width: 32px; height: 32px; border-radius: 50%; border: 1px solid #11180f; background: rgba(43, 56, 39, 0.92); color: var(--text); font: inherit; font-size: 18px; cursor: pointer; }
+.tray { margin-top: 12px; }
+.tray-label { margin: 10px 0 6px; color: var(--muted); font-size: 13.5px; font-weight: 400; text-transform: uppercase; }
+.tray-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.tray-chip { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; width: 84px; padding: 6px 4px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg2);
+  touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; text-align: center; }
+.tray-chip:hover { border-color: var(--accent); }
+.tray-chip.dragging, .tray-chip.in-pen { opacity: 0.35; }
+.tray-chip.ineligible { opacity: 0.5; cursor: not-allowed; touch-action: auto; }
+.tray-name { font-size: 9px; font-weight: 700; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tray-why { font-size: 9px; color: #ffc46a; }
+.drag-ghost { position: fixed; z-index: 60; pointer-events: none; transform: translate(-50%, -75%) scale(1.08); filter: drop-shadow(0 6px 8px rgba(0, 0, 0, 0.5)); }

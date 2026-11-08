@@ -3,7 +3,7 @@ import * as G from '../../core/game.js';
 import { JOBS } from '../../content/world.js';
 import { MUTATION_BY_ID } from '../../content/genetics.js';
 import { affinity, rarityScore } from '../../core/stats.js';
-import { drawMushroom, SPRITE_W, SPRITE_H } from '../../render/sprites.js';
+import { drawMushroom, spriteCanvas, SPRITE_W, SPRITE_H } from '../../render/sprites.js';
 import { exportMushroom, removeGuest } from '../../core/share.js';
 import {
   h, mushroomCard, statBars, attributeList, traitChip, perkChip, mutationChip, rarityBadge, temperamentText, section, empty, fmt, fmtDuration,
@@ -50,15 +50,13 @@ export function renderMushrooms(app) {
 }
 
 function animatedSprite(app, m) {
-  const scale = 5;
-  const c = h('canvas', { class: 'sprite big', width: SPRITE_W + 16, height: SPRITE_H + 8, style: { width: `${(SPRITE_W + 16) * scale}px`, height: `${(SPRITE_H + 8) * scale}px` } });
-  const ctx = c.getContext('2d');
+  const { canvas: c, ctx } = spriteCanvas(SPRITE_W + 16, SPRITE_H + 8, 5, 'sprite big');
   const mv = app.state.unlocks.mutations && m.mutation ? MUTATION_BY_ID[m.mutation.mutationId]?.visual : null;
   let alive = true;
   const loop = (ts) => {
     if (!alive || (c._started && !c.isConnected)) return;
     c._started = true;
-    ctx.clearRect(0, 0, c.width, c.height);
+    ctx.clearRect(0, 0, SPRITE_W + 16, SPRITE_H + 8);
     ctx.imageSmoothingEnabled = false;
     const t = ts / 1000;
     const bob = Math.sin(t * 2) > 0.7 ? -1 : 0;

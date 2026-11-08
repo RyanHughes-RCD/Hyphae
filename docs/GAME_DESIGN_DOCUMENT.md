@@ -2,7 +2,7 @@
 
 ## A cozy breeding, collecting, and forest-life game
 
-**Game Design Document | Version 0.4 | November 2026**
+**Game Design Document | Version 0.5 | November 2026**
 
 > **Design direction:** Begin with three ordinary mushrooms. Breed them,
 > generation by generation, into prized specialists. Give them meaningful
@@ -21,6 +21,7 @@
 | 0.2 | Nov 2026 | Expansion: three randomized starters; eight job stats; attribute-driven base stats; RGB colour stat budget; Advanced Traits; Perks; Mutations; stat caps; ordered breeding resolution; staged breeding unlocks; discovery-driven job unlocks; friend genetic donors; forest clock and weather; centralized configuration; anti-exploit rules; required test plan. Conflicts with v0.1 are resolved in place and listed in Appendix A. |
 | 0.3 | Nov 2026 | Owner decisions D-1 to D-15 applied (Appendix B): Rare attributes slightly stronger; Perks, Mutations and Weather/Time promoted to MVP Must-have; day/night follows real local time; one free breeding, then the soft currency **Glimmer**; development stages strictly linear in the listed order; balance simulation of 20+ generations required before probabilities are locked. |
 | 0.4 | Nov 2026 | One continuous forest (D-16): every clearing and job lives on the same forest screen. The forest grows when the player expands it north, east, south or west of a clearing; each story clearing's structures spawn at random positions in the new clearing. Quiet glades (plain clearings) can be bought for building space after the Woodland Workshop. Save schema 2 with migration. |
+| 0.5 | Nov 2026 | Wild, randomly generated expansions that must be cleaned up (clutter and thicket) and organised (every structure can be moved); a river that grows with each expansion and must be bridged; drag-and-drop breeding pen; signposts removed; mushrooms shown at 65% size. |
 
 ### 0.2 Conventions
 
@@ -1193,13 +1194,28 @@ and zoomable forest screen. The starting clearing sits in the middle.
 
 - **Growing the forest:** when the next story clearing's discovery trigger
   is met (table below), the forest is *ready to grow*. The player taps
-  **Expand** (or a signpost at an open edge of any clearing) and chooses
-  **north, east, south or west**. A new clearing opens on that side of the
-  chosen clearing.
-- **Random placement:** the new clearing uses its stage's terrain theme;
-  its job and unlock structures spawn as ruins at random free land tiles
-  (spaced apart, never on water or the path). Placement is seeded from the
-  world seed and the clearing's position, so it is reproducible.
+  **Expand** and chooses
+  **north, east, south or west** of the clearing in view. A new clearing
+  opens on that side.
+- **Wild generation (v0.5):** each new clearing is generated, not laid out:
+  patchy ground from its stage's theme (smooth noise), thicket creeping in
+  ragged from every open side, lakes where the theme calls for them, and
+  9–15 pieces of clutter (weeds, brambles, loose rocks, fallen branches, and
+  — needing the Woodland Workshop's tools — old stumps and boulders). Its
+  job and unlock structures spawn as ruins at random land tiles. Everything
+  is seeded from the world seed and the clearing's position.
+- **Cleaning up and organising:** clearing clutter or cutting back a thicket
+  tile (from ground the mushrooms can already reach) yields a few
+  resources and pushes the hedge border back. Any structure, including the
+  ones that spawned, can be moved to a free reachable tile.
+- **The river:** each expansion grows the river. It continues from any
+  neighbouring clearing whose river reaches the shared edge, otherwise it
+  rises from a spring, and it meanders out through a random open side.
+  Water (river and lakes) and thicket block mushrooms: structures can only
+  be restored, worked or cleared if they connect to the home clearing.
+  **Bridges** (6 twigs, 2 bark) are built on water next to reachable land.
+  If a change cuts a workstation off, its workers stop and the player is
+  told why.
 - **Paths:** a path is laid from the new clearing's centre to the shared
   edge, and from the neighbouring clearing's centre to the same edge.
 - **Quiet glades:** once the Woodland Workshop is restored, the player may
@@ -1208,8 +1224,7 @@ and zoomable forest screen. The starting clearing sits in the middle.
   ready, every expansion opens the story clearing, free.
 - **The map's edge:** hedge walls line every open side of the forest and
   dense undergrowth fills everything beyond, so the hedges are the physical
-  border of the map. Expanding pushes the border back; signposts on the
-  hedge mark where the forest can grow.
+  border of the map. Expanding, and clearing thicket, push the border back.
 - Mushrooms walk between clearings to reach their workstations; idle
   mushrooms, Guests and Wild Visitors stay in the starting clearing.
 
@@ -1931,6 +1946,7 @@ feel of breeding and visible forest life before adding more content.
 | D-13 | Affinity | Derived from highest final stat, 8 names. Approved. |
 | D-14 | Breeding cost | One free breeding, then Glimmer (soft currency). |
 | D-15 | Development stage order | Strictly linear, in the order listed. |
+| D-17 | Breeding parent selection | Drag and drop (or tap) mushrooms into a breeding pen. |
 | D-16 | Forest layout | One continuous forest; the player expands it north, east, south or west, and new job structures spawn at random in the new clearing. |
 
 ### B.1 New items raised by these decisions

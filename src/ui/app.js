@@ -5,7 +5,7 @@ import { conditionsAt } from '../core/time.js';
 import { JOB_BY_ID, STRUCTURES } from '../content/world.js';
 import { h, fmt, resIcon, resName } from './common.js';
 import { ForestView } from '../render/forest.js';
-import { renderForest, objectPanel, expandModal } from './screens/forest.js';
+import { renderForest, objectPanel, thicketPanel } from './screens/forest.js';
 import { renderMushrooms, mushroomDetail } from './screens/mushrooms.js';
 import { renderBreed } from './screens/breed.js';
 import { renderJobs } from './screens/jobs.js';
@@ -268,8 +268,8 @@ export class App {
     this.openMushroom(uid);
   }
 
-  onTapSignpost(areaId, dir) {
-    expandModal(this, areaId, dir);
+  onTapThicket(areaId, x, y) {
+    thicketPanel(this, areaId, x, y);
   }
 
   onTapObject(id) {
@@ -280,6 +280,13 @@ export class App {
     const tool = this.buildTool;
     if (!tool) return;
     const now = this.now();
+    if (tool.kind === 'clear') {
+      const area = this.state.world.areas[areaId];
+      const o = area.objects.find((q) => q.x === x && q.y === y);
+      if (o && STRUCTURES[o.def].kind === 'clutter') this.act(() => G.clearClutter(this.state, o.id), (r) => `Cleared! ${gainText(r.gained)}`);
+      else if (area.tiles[y][x] === 'u') this.act(() => G.clearThicket(this.state, areaId, x, y), (r) => `Thicket cut back. ${gainText(r.gained)}`);
+      return;
+    }
     if (tool.kind === 'place') {
       this.act(() => G.buildStructure(this.state, tool.def, areaId, x, y, now), `Built ${STRUCTURES[tool.def].name}.`);
     } else if (tool.kind === 'paint') {
@@ -288,7 +295,7 @@ export class App {
       if (!tool.objectId) {
         const o = this.state.world.areas[areaId].objects.find((q) => q.x === x && q.y === y);
         if (!o) return;
-        if (o.prefab) { this.toast('This structure is rooted in place.', 'error'); return; }
+        if (STRUCTURES[o.def].kind === 'clutter') { this.toast('Clear clutter instead of moving it.', 'error'); return; }
         this.buildTool = { kind: 'move', objectId: o.id };
         this.render();
       } else {
@@ -301,6 +308,10 @@ export class App {
       this.confirm('Remove?', `Remove this ${STRUCTURES[o.def].name}? Materials are not refunded.`, 'Remove', () => this.act(() => G.removeObject(this.state, o.id)), true);
     }
   }
+}
+
+export function gainText(g = {}) {
+  return Object.entries(g).map(([r, n]) => `+${n} ${resName(r)}`).join(', ');
 }
 
 function cap(s) {

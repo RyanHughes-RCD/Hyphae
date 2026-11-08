@@ -77,6 +77,15 @@ export const STRUCTURES = {
   little_pond: { name: 'Little Pond', kind: 'decor', cost: { stones: 4, dew: 4 }, buildable: true, requiresStage: 'pond', habitat: 'water', sprite: 'pond' },
   lantern: { name: 'Glow Lantern', kind: 'decor', cost: { planks: 2, glowDust: 1 }, buildable: true, requiresStage: 'roothollow', habitat: 'glow', sprite: 'lantern' },
   moonstone_ring: { name: 'Moonstone Ring', kind: 'special', sprite: 'moonstone' },
+  // crossing water: makes a river or lake tile walkable
+  bridge: { name: 'Bridge', kind: 'bridge', cost: { twigs: 6, bark: 2 }, buildable: true, onWater: true, sprite: 'bridge' },
+  // clutter strewn across new expansions — clear it to make room (yields a few resources)
+  weeds: { name: 'Weeds', kind: 'clutter', clear: { leaves: 1 }, weight: 6, sprite: 'weeds' },
+  brambles: { name: 'Brambles', kind: 'clutter', clear: { twigs: 2, berries: 1 }, weight: 4, sprite: 'brambles' },
+  rocks: { name: 'Loose Rocks', kind: 'clutter', clear: { stones: 2 }, weight: 3, sprite: 'rocks' },
+  branch: { name: 'Fallen Branch', kind: 'clutter', clear: { twigs: 2, bark: 1 }, weight: 3, sprite: 'branch' },
+  old_stump: { name: 'Old Stump', kind: 'clutter', clear: { bark: 2, roots: 1 }, needsStage: 'workshop', weight: 2, sprite: 'oldstump' },
+  boulder: { name: 'Boulder', kind: 'clutter', clear: { stones: 5 }, needsStage: 'workshop', weight: 1, sprite: 'boulder' },
 };
 
 export const BREEDING_STATIONS = {
@@ -96,13 +105,20 @@ export const TERRAIN = {
   d: { name: 'Damp soil', color: '#6a5038', dark: '#5a432e' },
   l: { name: 'Leaf litter', color: '#9a7a3a', dark: '#86692f' },
   s: { name: 'Stone', color: '#8a8a90', dark: '#76767c' },
-  w: { name: 'Shallow water', color: '#4f8fc0', dark: '#4380b0' },
+  w: { name: 'Shallow water', color: '#4f8fc0', dark: '#4380b0', water: true, blocks: true },
   h: { name: 'Deep shade', color: '#355a3a', dark: '#2c4d31' },
   x: { name: 'Magical ground', color: '#6a5aa0', dark: '#5a4b8e' },
   p: { name: 'Path', color: '#b09a6a', dark: '#9e895c' },
+  u: { name: 'Thicket', color: '#1d3322', dark: '#132219', blocks: true },
+  r: { name: 'River', color: '#3a78b0', dark: '#2f6a9e', water: true, blocks: true },
 };
 export const PAINTABLE_TERRAIN = ['g', 'm', 'd', 'l', 's', 'h'];
+// plain glades (extra space) use this theme
+export const GLADE_THEME = { ground: { g: 68, m: 22, l: 10 }, thicket: 0.45 };
 export const TERRAIN_PAINT_COST = { leaves: 1 };
+
+// clearing a thicket tile
+export const THICKET_CLEAR = { twigs: 1, leaves: 1 };
 
 export const AREA_W = 10;
 export const AREA_H = 9;
@@ -136,34 +152,14 @@ export const STAGES = [
     id: 'fungal', name: 'First Fungal Patch', discover: { type: 'jobCycles', jobs: ['forager'], count: 15 },
     blurb: 'Foraging in the leaf litter uncovered a damp fallen log, crowded with tiny fungi.',
     hint: 'Forage in the clearing to find what lies under the leaves (15 forage cycles).',
-    map: [
-      'hhddmmddhh',
-      'hddmmmmddh',
-      'ddmdddmmdd',
-      'dmmddddmmd',
-      'mmdddpdddm',
-      'dmmddpddmd',
-      'hdmmdpdmdh',
-      'hhdmmpmddh',
-      'hhhddpddhh',
-    ],
+    theme: { ground: { d: 45, m: 30, h: 15, l: 10 }, thicket: 0.5 },
     objects: [{ def: 'spore_bed', x: 4, y: 3, state: 'ruin' }],
   },
   {
     id: 'workshop', name: 'Woodland Workshop', discover: { type: 'jobCycles', jobs: ['mycologist'], count: 15 },
     blurb: 'Your Mycologists decomposed the log blocking the path. Beyond it: an old woodland workshop.',
     hint: 'Mycologists slowly decompose the log blocking the path (15 Mycologist cycles).',
-    map: [
-      'ggllggllgg',
-      'glllgglllg',
-      'gllpppplgg',
-      'ggppsspggg',
-      'ggpsssspgg',
-      'ggppsspplg',
-      'llgpppplll',
-      'lgggpgggll',
-      'ggggpggggg',
-    ],
+    theme: { ground: { g: 45, l: 35, s: 12, m: 8 }, thicket: 0.45 },
     objects: [
       { def: 'workbench', x: 3, y: 3, state: 'ruin' },
       { def: 'building_site', x: 6, y: 4, state: 'ruin' },
@@ -173,17 +169,7 @@ export const STAGES = [
     id: 'pond', name: 'Pond and Creek', discover: { type: 'project', project: 'creek_path' },
     blurb: 'The creek path is repaired. Reeds sway beside a quiet pond.',
     hint: 'Builders must repair the Creek Path (start the project from the Workshop).',
-    map: [
-      'ggmmwwwmgg',
-      'gmmwwwwwmg',
-      'gmwwwwwwmg',
-      'ggmwwwwmgg',
-      'gggmwwmggg',
-      'ggpgmwmggg',
-      'gpgggwgggg',
-      'ppggggwwgg',
-      'pgggggwwwg',
-    ],
+    theme: { ground: { g: 45, m: 40, l: 15 }, lakes: 2, thicket: 0.4 },
     objects: [
       { def: 'dew_reeds', x: 1, y: 3, state: 'ruin' },
       { def: 'water_barrel', x: 7, y: 5, state: 'ruin' },
@@ -194,17 +180,7 @@ export const STAGES = [
     id: 'roothollow', name: 'Root Hollow', discover: { type: 'jobCycles', jobs: ['dew_collector', 'waterer', 'nest_tender'], count: 20 },
     blurb: 'As the creek water receded, an old root bank opened into a hollow beneath the trees.',
     hint: 'Work at the pond until the water recedes from the root bank (20 pond job cycles).',
-    map: [
-      'hhhhddhhhh',
-      'hhdddddhhh',
-      'hddsdddddh',
-      'hdddddsddh',
-      'hddddddddh',
-      'hhdddsdddh',
-      'hhddddddhh',
-      'hhhddddhhh',
-      'hhhhddhhhh',
-    ],
+    theme: { ground: { d: 50, h: 32, s: 18 }, thicket: 0.6 },
     objects: [
       { def: 'dig_site', x: 3, y: 4, state: 'ruin' },
       { def: 'lookout_stump', x: 6, y: 2, state: 'ruin' },
@@ -214,17 +190,7 @@ export const STAGES = [
     id: 'landmark', name: 'Enchanted Landmark', discover: { type: 'jobCycles', jobs: ['night_watcher'], count: 10 },
     blurb: 'Glow traces led your Night Watchers to an overgrown shrine in a moonlit grove.',
     hint: 'Night Watchers follow glow traces at dusk and night (10 Night Watcher cycles).',
-    map: [
-      'hhxxxxxxhh',
-      'hxxmmmmxxh',
-      'xxmmxxmmxx',
-      'xmmxxxxmmx',
-      'xmxxsxxxmx',
-      'xmmxxxxmmx',
-      'xxmmxxmmxx',
-      'hxxmmmmxxh',
-      'hhxxxxxxhh',
-    ],
+    theme: { ground: { x: 45, m: 35, h: 20 }, thicket: 0.5 },
     objects: [
       { def: 'shrine', x: 4, y: 3, state: 'ruin' },
       { def: 'moonlit_grove', x: 2, y: 6, state: 'ruin' },
@@ -234,17 +200,7 @@ export const STAGES = [
     id: 'community', name: 'Community Clearing', discover: { type: 'jobCycles', jobs: ['spirit_keeper'], count: 15 },
     blurb: "The Spirit Keeper's visitors revealed a hidden gathering place.",
     hint: 'Spirit Keepers attract visitors who know the way (15 Spirit Keeper cycles).',
-    map: [
-      'gggggggggg',
-      'gmgggggggm',
-      'ggppppppgg',
-      'gpggggggpg',
-      'gpgllllgpg',
-      'gpggggggpg',
-      'ggppppppgg',
-      'mgggggggmg',
-      'gggggggggg',
-    ],
+    theme: { ground: { g: 70, m: 20, l: 10 }, thicket: 0.35 },
     objects: [
       { def: 'gathering_circle', x: 4, y: 3, state: 'ruin' },
       { def: 'gift_table', x: 7, y: 6, state: 'ruin' },

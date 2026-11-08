@@ -22,6 +22,8 @@ export function drawTile(ctx, code, tx, ty, t, seed = 0, backdrop = false) {
   const T = TERRAIN[code] || TERRAIN.g;
   const x0 = tx * TILE;
   const y0 = ty * TILE;
+  if (code === 'u') return; // thicket is drawn as undergrowth by the forest view
+  if (code === 'r') { drawRiver(ctx, x0, y0, tx, ty, t); return; }
   if (backdrop && code in BACKDROP_ALPHA) {
     if (code === 'g') {
       if (noise(tx, ty, 77 + seed) > 0.9) {
@@ -67,6 +69,19 @@ export function drawTile(ctx, code, tx, ty, t, seed = 0, backdrop = false) {
     r(ctx, '#c8b07a', x0 + 3, y0 + 5, 2, 1);
     r(ctx, '#c8b07a', x0 + 10, y0 + 11, 2, 1);
   }
+}
+
+function drawRiver(ctx, x0, y0, tx, ty, t) {
+  r(ctx, '#2f6a9e', x0, y0, TILE, TILE);
+  r(ctx, '#3a78b0', x0 + 1, y0 + 1, TILE - 2, TILE - 2);
+  // drifting ripples
+  for (let i = 0; i < 3; i++) {
+    const ph = (t * 0.6 + i / 3 + noise(tx, ty, i) * 0.3) % 1;
+    const yy = y0 + 2 + Math.floor(ph * 12);
+    const xx = x0 + 2 + Math.floor(noise(tx, ty, i + 7) * 9);
+    r(ctx, '#7cb8e0', xx, yy, 4, 1);
+  }
+  r(ctx, '#bfe2f8', x0 + 3 + Math.floor(noise(ty, tx, 3) * 9), y0 + 3 + Math.floor(((t * 0.4) % 1) * 10), 1, 1);
 }
 
 // --- structure art helpers ---
@@ -187,6 +202,34 @@ const ART = {
       r(ctx, i % 2 ? C.leafD : '#2a5a2e', x + 8 - w / 2 + sway, y - 14 + i * 6, w, 6);
     }
     r(ctx, '#3f7a3c', x + 7 + sway, y - 15, 2, 3);
+  },
+  weeds(ctx, x, y) {
+    for (const [a, h] of [[2, 9], [4, 12], [6, 8], [8, 11], [10, 9], [12, 12], [13, 7]]) { r(ctx, '#5e8f2e', x + a, y + 15 - h, 1, h); r(ctx, '#86b84a', x + a, y + 15 - h, 1, 2); }
+    r(ctx, '#d8d070', x + 5, y + 5, 1, 1); r(ctx, '#d8d070', x + 11, y + 4, 1, 1);
+  },
+  brambles(ctx, x, y) {
+    r(ctx, '#24461f', x + 1, y + 6, 14, 9); r(ctx, '#2f5a26', x + 2, y + 4, 12, 9);
+    for (const [a, b] of [[2, 7], [6, 5], [10, 8], [13, 6], [4, 11], [9, 12]]) { r(ctx, '#8a6a3a', x + a, y + b, 2, 1); r(ctx, '#c8b090', x + a + 1, y + b - 1, 1, 1); }
+    r(ctx, '#3a1c48', x + 5, y + 9, 2, 2); r(ctx, '#3a1c48', x + 11, y + 10, 2, 2);
+  },
+  rocks(ctx, x, y) {
+    for (const [a, b, w] of [[2, 10, 4], [7, 11, 3], [10, 8, 4], [5, 7, 3]]) { r(ctx, C.stoneD, x + a, y + b, w, 3); r(ctx, C.stoneL, x + a, y + b, w - 1, 1); }
+  },
+  branch(ctx, x, y) {
+    r(ctx, C.woodD, x + 1, y + 10, 14, 2); r(ctx, C.wood, x + 2, y + 10, 12, 1); r(ctx, C.woodD, x + 5, y + 7, 1, 3); r(ctx, C.woodD, x + 6, y + 6, 2, 1);
+    r(ctx, C.woodD, x + 10, y + 12, 1, 2); r(ctx, C.leaf, x + 7, y + 5, 2, 1); r(ctx, C.leaf, x + 13, y + 9, 2, 1);
+  },
+  oldstump(ctx, x, y) {
+    r(ctx, '#4a301a', x + 3, y + 6, 10, 9); r(ctx, '#7a5434', x + 3, y + 5, 10, 3); r(ctx, '#a8803a', x + 5, y + 6, 6, 1);
+    r(ctx, '#4a301a', x + 1, y + 13, 3, 2); r(ctx, '#4a301a', x + 12, y + 13, 3, 2); r(ctx, C.leaf, x + 4, y + 4, 2, 1); r(ctx, '#d9c27a', x + 10, y + 9, 2, 2);
+  },
+  boulder(ctx, x, y) {
+    r(ctx, '#5a5a62', x + 1, y + 4, 14, 11); r(ctx, '#7a7a82', x + 2, y + 3, 11, 10); r(ctx, '#a8a8b0', x + 4, y + 4, 5, 2); r(ctx, '#4f7a3c', x + 9, y + 3, 3, 1); r(ctx, '#4a4a52', x + 3, y + 13, 11, 2);
+  },
+  bridge(ctx, x, y) {
+    r(ctx, 'rgba(0,0,0,0.25)', x, y + 13, 16, 3);
+    for (let i = 0; i < 4; i++) { r(ctx, i % 2 ? C.wood : C.woodL, x, y + 1 + i * 4, 16, 3); r(ctx, C.woodD, x, y + 4 + i * 4, 16, 1); }
+    r(ctx, C.woodD, x + 1, y, 1, 16); r(ctx, C.woodD, x + 14, y, 1, 16);
   },
   moonstone(ctx, x, y, t) {
     for (const [a, b] of [[2, 8], [12, 8], [7, 4], [7, 12], [4, 5], [10, 11]]) {

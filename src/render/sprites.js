@@ -5,6 +5,8 @@ import { RESOURCES } from '../content/world.js';
 
 export const SPRITE_W = 24;
 export const SPRITE_H = 28;
+// mushrooms are shown at 65% of their sprite size, in the forest and on screens
+export const MUSHROOM_SCALE = 0.65;
 const CX = 12;
 const CAP_BOTTOM = 14;
 
@@ -280,31 +282,31 @@ export function drawMushroom(ctx, m, x, y, t = 0, opts = {}) {
   // smooth: sub-pixel positions (forest camera); otherwise snap to whole pixels (UI cards)
   const snap = opts.smooth ? (v) => v : Math.round;
   const bob = rm ? 0 : opts.bob || 0;
-  const footX = snap(x) + SPRITE_W / 2;
-  const footY = snap(y + bob) + SPRITE_H;
+  const size = opts.size ?? 1;
   const sx = opts.squish?.sx ?? 1;
   const sy = opts.squish?.sy ?? 1;
+  // everything is drawn in a frame anchored at the mushroom's feet, scaled by `size`
+  ctx.save();
+  ctx.translate(snap(x) + SPRITE_W / 2, snap(y + bob) + SPRITE_H);
+  ctx.scale(size, size);
   // shadow stays on the ground and widens as the mushroom squashes
   ctx.fillStyle = 'rgba(0,0,0,0.22)';
-  ctx.fillRect(footX - 6 * sx, snap(y) + SPRITE_H - 2, 12 * sx, 2);
-  ctx.fillRect(footX - 7 * sx, snap(y) + SPRITE_H - 1, 14 * sx, 1);
+  ctx.fillRect(-6 * sx, -2 - bob, 12 * sx, 2);
+  ctx.fillRect(-7 * sx, -1 - bob, 14 * sx, 1);
   // ordinary glow
   let lvl = GLOW_LEVEL[m.genes.glow] || 0;
   if (lvl) {
     if (m.genes.glow === 'pulse' && !rm) lvl *= 0.6 + 0.4 * Math.sin(t * 3);
-    const gx = footX;
-    const gy = footY - (SPRITE_H - 9) * sy;
-    const grd = ctx.createRadialGradient(gx, gy, 2, gx, gy, 16);
+    const gy = -(SPRITE_H - 9) * sy;
+    const grd = ctx.createRadialGradient(0, gy, 2, 0, gy, 16);
     grd.addColorStop(0, css(shade(spr.capColor, 0.5), lvl));
     grd.addColorStop(1, css(spr.capColor, 0));
     ctx.fillStyle = grd;
-    ctx.fillRect(gx - 16, gy - 16, 32, 32);
+    ctx.fillRect(-16, gy - 16, 32, 32);
   }
-  // body: scaled around the feet (squash and stretch) and optionally mirrored
-  ctx.save();
-  ctx.translate(footX, footY);
-  ctx.scale(opts.flip ? -sx : sx, sy);
   const mv = opts.mutationVisual;
+  ctx.save();
+  ctx.scale(opts.flip ? -sx : sx, sy);
   if (mv && (mv.kind === 'outline' || mv.kind === 'prism')) {
     const pulse = rm ? 0.8 : 0.55 + 0.45 * Math.sin(t * 2.5);
     const col = mv.kind === 'prism' ? hueRgb((t * 90) % 360) : mv.color;
@@ -314,7 +316,8 @@ export function drawMushroom(ctx, m, x, y, t = 0, opts = {}) {
   }
   ctx.drawImage(spr.canvas, -SPRITE_W / 2, -SPRITE_H);
   ctx.restore();
-  if (mv) drawParticles(ctx, mv, footX - SPRITE_W / 2, footY - SPRITE_H * sy, t, rm, m.genes.pattern);
+  if (mv) drawParticles(ctx, mv, -SPRITE_W / 2, -SPRITE_H * sy, t, rm, m.genes.pattern);
+  ctx.restore();
 }
 
 function hueRgb(h) {
@@ -361,16 +364,29 @@ function drawParticles(ctx, mv, x, y, t, rm, seed) {
   }
 }
 
-/** Draw a mushroom into a standalone canvas element at an integer scale (for UI cards). */
+/**
+ * A mushroom in its own canvas for the UI, shown at `scale` × 65% of its sprite
+ * size and rendered at device resolution so the pixels stay crisp.
+ */
 export function mushroomCanvas(m, scale = 3, opts = {}) {
-  const c = makeCanvas(SPRITE_W + 8, SPRITE_H + 4);
-  c.className = 'sprite';
-  c.style.width = (SPRITE_W + 8) * scale + 'px';
-  c.style.height = (SPRITE_H + 4) * scale + 'px';
-  const ctx = c.getContext('2d');
+  const { canvas, ctx } = spriteCanvas(SPRITE_W + 8, SPRITE_H + 4, scale);
   ctx.imageSmoothingEnabled = false;
   drawMushroom(ctx, m, 4, 2, 0.6, opts);
-  return c;
+  return canvas;
+}
+
+/** A canvas for drawing a mushroom of logical size w × h at `scale` × 65% (backed at device resolution). */
+export function spriteCanvas(w, h, scale, className = 'sprite') {
+  const k = scale * MUSHROOM_SCALE;
+  const dpr = Math.max(1, Math.min(3, (typeof window !== 'undefined' && window.devicePixelRatio) || 1));
+  const c = makeCanvas(Math.round(w * k * dpr), Math.round(h * k * dpr));
+  c.className = className;
+  c.style.width = `${w * k}px`;
+  c.style.height = `${h * k}px`;
+  const ctx = c.getContext('2d');
+  ctx.setTransform(k * dpr, 0, 0, k * dpr, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  return { canvas: c, ctx, k: k * dpr };
 }
 
 // ---------- resource icon (small CSS dot) ----------

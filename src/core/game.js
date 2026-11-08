@@ -5,7 +5,7 @@ import { CATEGORIES } from '../content/attributes.js';
 import { PERK_BY_ID, MUTATION_BY_ID } from '../content/genetics.js';
 import {
   JOBS, JOB_BY_ID, STRUCTURES, STAGES, STAGE_BY_ID, STAGE_IDS, PROJECTS, BREEDING_STATIONS,
-  RESOURCE_IDS, TERRAIN, AREA_W, AREA_H, PAINTABLE_TERRAIN, TERRAIN_PAINT_COST,
+  RESOURCE_IDS, TERRAIN, AREA_W, AREA_H, PAINTABLE_TERRAIN, TERRAIN_PAINT_COST, GLADE_THEME, THICKET_CLEAR,
 } from '../content/world.js';
 import { hash, hashHex, makeRng, freshSeed } from './rng.js';
 import { computeStats, colorFamily } from './stats.js';
@@ -162,36 +162,166 @@ function carvePath(area, dir) {
   const e = EDGE_MID[dir];
   const set = (x, y) => {
     const t = area.tiles[y][x];
-    if ('gmldh'.includes(t)) area.tiles[y] = area.tiles[y].slice(0, x) + 'p' + area.tiles[y].slice(x + 1);
+    if ('gmldhu'.includes(t)) setTile(area, x, y, 'p');
   };
   for (let x = Math.min(c.x, e.x); x <= Math.max(c.x, e.x); x++) set(x, c.y);
   for (let y = Math.min(c.y, e.y); y <= Math.max(c.y, e.y); y++) set(e.x, y);
 }
 
-function plainTiles(rng) {
+export function setTile(area, x, y, code) {
+  area.tiles[y] = area.tiles[y].slice(0, x) + code + area.tiles[y].slice(x + 1);
+}
+
+/** Smooth value noise in [0, 1) for organic patches of ground. */
+function valueNoise(seed, x, y, scale) {
+  const gx = x / scale;
+  const gy = y / scale;
+  const x0 = Math.floor(gx);
+  const y0 = Math.floor(gy);
+  const fx = gx - x0;
+  const fy = gy - y0;
+  const r = (a, b) => hash(seed, a, b) / 4294967296;
+  const sm = (t) => t * t * (3 - 2 * t);
+  const top = r(x0, y0) + (r(x0 + 1, y0) - r(x0, y0)) * sm(fx);
+  const bot = r(x0, y0 + 1) + (r(x0 + 1, y0 + 1) - r(x0, y0 + 1)) * sm(fx);
+  return top + (bot - top) * sm(fy);
+}
+
+/**
+ * A wild, randomly generated clearing: patchy themed ground, thicket creeping
+ * in from every open edge, optional lakes, then (by the caller) a river,
+ * a path in from the neighbour, structures and clutter.
+ */
+function generateTiles(state, theme, cx, cy, openSides, seed) {
+  const codes = Object.keys(theme.ground);
+  const weights = codes.map((c) => theme.ground[c]);
+  const total = weights.reduce((a, b) => a + b, 0);
   const rows = [];
   for (let y = 0; y < AREA_H; y++) {
     let row = '';
-    for (let x = 0; x < AREA_W; x++) row += rng.chance(0.12) ? 'm' : rng.chance(0.06) ? 'l' : 'g';
+    for (let x = 0; x < AREA_W; x++) {
+      const gx = cx * AREA_W + x;
+      const gy = cy * AREA_H + y;
+      // patches: low-frequency noise picks the ground, a little fine noise roughens the patch edges
+      let v = (valueNoise(seed + 'g', gx, gy, 3.2) * 0.8 + valueNoise(seed + 'f', gx, gy, 1.3) * 0.2) * total;
+      let code = codes[codes.length - 1];
+      for (let i = 0; i < codes.length; i++) { v -= weights[i]; if (v < 0) { code = codes[i]; break; } }
+      // thicket creeps in from open edges with a ragged front, plus a few clumps inside
+      const dEdge = Math.min(
+        openSides.west ? x : 99, openSides.east ? AREA_W - 1 - x : 99,
+        openSides.north ? y : 99, openSides.south ? AREA_H - 1 - y : 99,
+      );
+      const n = valueNoise(seed + 't', gx, gy, 2.1);
+      const reach = theme.thicket * 3.2 * n;
+      if (dEdge < reach || (n > 0.86 && valueNoise(seed + 'c', gx, gy, 1.7) > 0.55)) code = 'u';
+      row += code;
+    }
     rows.push(row);
   }
-  return rows;
+  const area = { tiles: rows };
+  // lakes
+  const rng = makeRng(hash(seed, 'lakes'));
+  for (let i = 0; i < (theme.lakes || 0); i++) {
+    const lx = rng.int(2, AREA_W - 3);
+    const ly = rng.int(2, AREA_H - 3);
+    const rx = rng.range(1.2, 2.4);
+    const ry = rng.range(1, 1.8);
+    for (let y = 0; y < AREA_H; y++) for (let x = 0; x < AREA_W; x++) {
+      if (((x - lx) / rx) ** 2 + ((y - ly) / ry) ** 2 <= 1) setTile(area, x, y, 'w');
+    }
+  }
+  return area.tiles;
 }
 
-/** Scatter structures on random free land tiles, spaced apart. */
-function scatterObjects(state, area, defs, rng) {
-  const spots = [];
-  for (let y = 2; y <= AREA_H - 2; y++) for (let x = 1; x <= AREA_W - 2; x++) {
+const SIDES = {
+  north: { dx: 0, dy: -1, edge: (i) => ({ x: i, y: 0 }), len: AREA_W },
+  south: { dx: 0, dy: 1, edge: (i) => ({ x: i, y: AREA_H - 1 }), len: AREA_W },
+  west: { dx: -1, dy: 0, edge: (i) => ({ x: 0, y: i }), len: AREA_H },
+  east: { dx: 1, dy: 0, edge: (i) => ({ x: AREA_W - 1, y: i }), len: AREA_H },
+};
+
+/**
+ * Grow the river into a new clearing. It continues from any neighbour whose
+ * river already reaches the shared edge; otherwise it rises from a spring.
+ * It then meanders out through a random open side, ready to grow further.
+ */
+function carveRiver(state, area, cx, cy, openSides, rng) {
+  let start = null;
+  for (const [dir, side] of Object.entries(SIDES)) {
+    const n = areaAt(state, cx + side.dx, cy + side.dy);
+    if (!n) continue;
+    const opp = SIDES[OPPOSITE[dir]];
+    for (let i = 0; i < side.len && !start; i++) {
+      const theirs = opp.edge(i);
+      if (n.area.tiles[theirs.y][theirs.x] === 'r') start = side.edge(i);
+    }
+  }
+  if (!start) {
+    // a spring: a small pool somewhere inside
+    start = { x: rng.int(2, AREA_W - 3), y: rng.int(2, AREA_H - 3) };
+    for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) setTile(area, Math.min(AREA_W - 1, start.x + dx), Math.min(AREA_H - 1, start.y + dy), 'w');
+  }
+  const exits = Object.keys(openSides).filter((d) => openSides[d]);
+  const exitDir = exits.length ? rng.pick(exits) : rng.pick(Object.keys(SIDES));
+  const side = SIDES[exitDir];
+  const goal = side.edge(rng.int(1, side.len - 2));
+  let { x, y } = start;
+  const seen = new Set();
+  for (let steps = 0; steps < 80; steps++) {
+    if (area.tiles[y][x] !== 'w') setTile(area, x, y, 'r');
+    seen.add(x + ',' + y);
+    if (x === goal.x && y === goal.y) break;
+    const toward = [];
+    if (goal.x !== x) toward.push([Math.sign(goal.x - x), 0]);
+    if (goal.y !== y) toward.push([0, Math.sign(goal.y - y)]);
+    const all = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    let [dx, dy] = rng.chance(0.68) && toward.length ? rng.pick(toward) : rng.pick(all);
+    let nx = x + dx;
+    let ny = y + dy;
+    if (nx < 0 || ny < 0 || nx >= AREA_W || ny >= AREA_H || seen.has(nx + ',' + ny)) {
+      [dx, dy] = toward[0] || [0, 0];
+      nx = x + dx;
+      ny = y + dy;
+    }
+    x = nx;
+    y = ny;
+  }
+}
+
+const CLUTTER = Object.entries(STRUCTURES).filter(([, d]) => d.kind === 'clutter').map(([id, d]) => ({ id, weight: d.weight }));
+
+/** Random free land tiles for structures and clutter (spaced for structures). */
+function landSpots(area) {
+  const out = [];
+  for (let y = 1; y <= AREA_H - 2; y++) for (let x = 1; x <= AREA_W - 2; x++) {
     const t = area.tiles[y][x];
-    if (t !== 'w' && t !== 'p') spots.push({ x, y });
+    if (!TERRAIN[t]?.blocks && t !== 'p' && !area.objects.some((o) => o.x === x && o.y === y)) out.push({ x, y });
   }
-  const placed = [];
+  return out;
+}
+
+function scatterObjects(state, area, defs, rng, kind) {
   for (const def of defs) {
-    const free = rng.shuffle(spots).filter((p) => placed.every((q) => Math.max(Math.abs(q.x - p.x), Math.abs(q.y - p.y)) >= 2));
-    const spot = free[0] || rng.pick(spots.filter((p) => !placed.some((q) => q.x === p.x && q.y === p.y)));
-    placed.push(spot);
-    area.objects.push({ id: 'o' + state.nextObjectId++, def, x: spot.x, y: spot.y, state: 'ruin', prefab: true });
+    const spots = landSpots(area);
+    if (!spots.length) return;
+    const spaced = kind === 'ruin' ? rng.shuffle(spots).filter((p) => area.objects.every((q) => Math.max(Math.abs(q.x - p.x), Math.abs(q.y - p.y)) >= 2)) : [];
+    const spot = spaced[0] || rng.pick(spots);
+    area.objects.push({ id: 'o' + state.nextObjectId++, def, x: spot.x, y: spot.y, state: kind === 'ruin' ? 'ruin' : 'built', prefab: kind === 'ruin' });
   }
+}
+
+function buildWildClearing(state, theme, cx, cy, entryDir, structures) {
+  const seed = 'clr' + hash(state.worldSeed, 'clearing', cx, cy);
+  const rng = makeRng(hash(seed, 'objects'));
+  const openSides = {};
+  for (const [dir, side] of Object.entries(SIDES)) openSides[dir] = !areaAt(state, cx + side.dx, cy + side.dy);
+  const area = { cx, cy, tiles: generateTiles(state, theme, cx, cy, openSides, seed), objects: [] };
+  carveRiver(state, area, cx, cy, openSides, makeRng(hash(seed, 'river')));
+  carvePath(area, entryDir);
+  scatterObjects(state, area, structures, rng, 'ruin');
+  const clutterCount = rng.int(9, 15);
+  scatterObjects(state, area, Array.from({ length: clutterCount }, () => rng.weighted(CLUTTER, (c) => c.weight).id), rng, 'clutter');
+  return area;
 }
 
 function createStartClearing(state, now) {
@@ -271,30 +401,133 @@ export function expandForest(state, fromId, dir, now) {
   const opt = expansionOption(state, fromId, dir);
   if (!opt.ok) return fail(opt.reason);
   const from = state.world.areas[fromId];
-  const rng = makeRng(hash(state.worldSeed, 'clearing', opt.cx, opt.cy, Object.keys(state.world.areas).length));
   let id;
   let area;
   if (opt.kind === 'stage') {
     const st = opt.stage;
     id = st.id;
-    area = { stage: st.id, cx: opt.cx, cy: opt.cy, discoveredAt: now, tiles: st.map.slice(), objects: [] };
-    carvePath(area, OPPOSITE[dir]);
-    scatterObjects(state, area, st.objects.map((o) => o.def), rng);
+    area = buildWildClearing(state, st.theme, opt.cx, opt.cy, OPPOSITE[dir], st.objects.map((o) => o.def));
+    area.stage = st.id;
   } else {
     pay(state, opt.cost);
     id = 'c' + (plainClearingCount(state) + 1);
     while (state.world.areas[id]) id += 'x';
-    area = { stage: null, cx: opt.cx, cy: opt.cy, discoveredAt: now, tiles: plainTiles(rng), objects: [] };
-    carvePath(area, OPPOSITE[dir]);
+    area = buildWildClearing(state, GLADE_THEME, opt.cx, opt.cy, OPPOSITE[dir], []);
+    area.stage = null;
   }
+  area.discoveredAt = now;
   carvePath(from, dir);
+  // the neighbour's thicket along the shared edge gives way to the new clearing
   state.world.areas[id] = area;
+  bumpWorld(state);
   if (opt.kind === 'stage') {
     const st = opt.stage;
-    event(state, 'discovery', `Discovered: ${st.name}`, `${st.blurb} Restore its structures to unlock new jobs.`);
+    event(state, 'discovery', `Discovered: ${st.name}`, `${st.blurb} It's wild and overgrown: clear the clutter and thicket, bridge the river where you need to, then restore its structures to unlock new jobs.`);
     state.glimmer += getConfig().economy.milestoneGlimmer;
-  } else event(state, 'expand', 'A new glade opens up', 'More room to build, decorate and house mushrooms.');
+  } else event(state, 'expand', 'A new glade opens up', 'Clear it out to make room to build.');
+  stopUnreachableWork(state);
   return ok({ id, area });
+}
+
+// ---------------------------------------------------------------- reachability (river & thicket)
+
+export function bumpWorld(state) {
+  state.world.version = (state.world.version || 0) + 1;
+}
+
+/** Tile code at global tile coordinates, or null outside the map. */
+export function globalTile(state, gx, gy) {
+  const cx = Math.floor(gx / AREA_W);
+  const cy = Math.floor(gy / AREA_H);
+  const a = areaAt(state, cx, cy);
+  if (!a) return null;
+  return a.area.tiles[gy - cy * AREA_H][gx - cx * AREA_W];
+}
+
+const reachCache = new WeakMap();
+
+/** Global tiles mushrooms can walk to from home (water needs a bridge, thicket must be cleared). */
+export function reachableTiles(state) {
+  const v = state.world.version || 0;
+  const hit = reachCache.get(state);
+  if (hit && hit.v === v && hit.n === Object.keys(state.world.areas).length) return hit.set;
+  const bridges = new Set();
+  for (const a of Object.values(state.world.areas)) for (const o of a.objects) if (o.def === 'bridge') bridges.add((a.cx * AREA_W + o.x) + ',' + (a.cy * AREA_H + o.y));
+  const home = state.world.areas.clearing;
+  const start = [home.cx * AREA_W + 5, home.cy * AREA_H + 4];
+  const set = new Set([start.join(',')]);
+  const queue = [start];
+  while (queue.length) {
+    const [x, y] = queue.pop();
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = x + dx;
+      const ny = y + dy;
+      const k = nx + ',' + ny;
+      if (set.has(k)) continue;
+      const t = globalTile(state, nx, ny);
+      if (t === null) continue;
+      if (TERRAIN[t]?.blocks && !bridges.has(k)) continue;
+      set.add(k);
+      queue.push([nx, ny]);
+    }
+  }
+  reachCache.set(state, { v, n: Object.keys(state.world.areas).length, set });
+  return set;
+}
+
+export function isReachable(state, areaId, x, y) {
+  const a = state.world.areas[areaId];
+  if (!a) return false;
+  return reachableTiles(state).has((a.cx * AREA_W + x) + ',' + (a.cy * AREA_H + y));
+}
+
+/** Can mushrooms get to a structure (standing on or right beside it)? */
+export function objectReachable(state, objectId) {
+  const f = objectById(state, objectId);
+  if (!f) return false;
+  const { x, y } = f.obj;
+  return [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => isReachable(state, f.areaId, x + dx, y + dy));
+}
+
+function stopUnreachableWork(state) {
+  for (const m of state.mushrooms) {
+    if (m.work && !objectReachable(state, m.work.structureId)) {
+      event(state, 'blocked', `${m.name} can't reach work`, 'The way is blocked by water or thicket. Build a bridge or clear a path.');
+      m.work = null;
+    }
+  }
+}
+
+// ---------------------------------------------------------------- cleaning up
+
+export function clearClutter(state, objectId) {
+  const f = objectById(state, objectId);
+  if (!f) return fail('Unknown object.');
+  const def = STRUCTURES[f.obj.def];
+  if (def.kind !== 'clutter') return fail('That is not clutter.');
+  if (def.needsStage && !stageComplete(state, def.needsStage)) return fail(`You need tools from the ${STAGE_BY_ID[def.needsStage].name} to clear this.`);
+  if (!objectReachable(state, objectId)) return fail('Your mushrooms cannot reach it yet.');
+  const area = state.world.areas[f.areaId];
+  area.objects = area.objects.filter((o) => o.id !== objectId);
+  for (const [r, n] of Object.entries(def.clear)) state.inventory[r] = (state.inventory[r] || 0) + n;
+  bumpWorld(state);
+  return ok({ gained: def.clear });
+}
+
+/** Cut back one tile of thicket next to land your mushrooms can reach. */
+export function clearThicket(state, areaId, x, y) {
+  const area = state.world.areas[areaId];
+  if (area?.tiles[y]?.[x] !== 'u') return fail('No thicket there.');
+  const near = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => {
+    const gx = area.cx * AREA_W + x + dx;
+    const gy = area.cy * AREA_H + y + dy;
+    return reachableTiles(state).has(gx + ',' + gy);
+  });
+  if (!near) return fail('Clear the thicket from the edge your mushrooms can reach.');
+  setTile(area, x, y, 'g');
+  for (const [r, n] of Object.entries(THICKET_CLEAR)) state.inventory[r] = (state.inventory[r] || 0) + n;
+  bumpWorld(state);
+  return ok({ gained: THICKET_CLEAR });
 }
 
 /** Announce (once) when the forest is ready to grow. */
@@ -348,6 +581,7 @@ export function restoreStructure(state, objectId, now) {
   const { obj } = found;
   if (obj.state !== 'ruin') return fail('Already restored.');
   const def = STRUCTURES[obj.def];
+  if (!objectReachable(state, objectId)) return fail('Your mushrooms cannot reach it yet — bridge the water or clear the thicket.');
   if (!canAfford(state, def.cost)) return fail('Not enough materials.');
   pay(state, def.cost);
   obj.state = 'built';
@@ -376,27 +610,51 @@ export function buildable(state, defId) {
   return true;
 }
 
+/** Why a structure cannot stand on a tile (null = it can). */
+function placementProblem(state, areaId, x, y, defId, ignoreId = null) {
+  const def = STRUCTURES[defId];
+  const tile = state.world.areas[areaId]?.tiles[y]?.[x];
+  if (!tile || !tileFree(state, areaId, x, y, ignoreId)) return 'That spot is taken — clear it first.';
+  if (tile === 'u') return 'Clear the thicket first.';
+  const water = TERRAIN[tile]?.water;
+  if (def.onWater && !water) return 'Bridges go over water.';
+  if (!def.onWater && water && defId !== 'little_pond') return 'Cannot build on water.';
+  if (def.onWater) {
+    // a bridge must touch land your mushrooms can already reach
+    const a = state.world.areas[areaId];
+    const ok2 = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => reachableTiles(state).has((a.cx * AREA_W + x + dx) + ',' + (a.cy * AREA_H + y + dy)));
+    if (!ok2) return 'Build bridges out from land your mushrooms can reach.';
+  } else if (!isReachable(state, areaId, x, y)) return 'Your mushrooms cannot reach that spot yet.';
+  return null;
+}
+
 export function buildStructure(state, defId, areaId, x, y, now) {
   const def = STRUCTURES[defId];
   if (!buildable(state, defId)) return fail('Not available yet.');
-  if (!tileFree(state, areaId, x, y)) return fail('That spot is taken.');
-  const tile = state.world.areas[areaId].tiles[y][x];
-  if (tile === 'w' && defId !== 'little_pond') return fail('Cannot build on water.');
+  const problem = placementProblem(state, areaId, x, y, defId);
+  if (problem) return fail(problem);
   const cost = def.buildCost || def.cost;
   if (!canAfford(state, cost)) return fail('Not enough materials.');
   pay(state, cost);
   state.world.areas[areaId].objects.push({ id: 'o' + state.nextObjectId++, def: defId, x, y, state: 'built', prefab: false });
+  bumpWorld(state);
   checkStages(state);
   return ok();
 }
 
+/** Organise: any structure can be moved (within its clearing) to a free, reachable spot. */
 export function moveObject(state, objectId, x, y) {
   const found = objectById(state, objectId);
   if (!found) return fail('Unknown object.');
-  if (found.obj.prefab) return fail('This structure is rooted in place.');
-  if (!tileFree(state, found.areaId, x, y, objectId)) return fail('That spot is taken.');
+  const def = STRUCTURES[found.obj.def];
+  if (def.kind === 'clutter') return fail('Clear clutter instead of moving it.');
+  if (found.obj.def === 'moonstone_ring') return fail('The Moonstone Ring cannot be moved.');
+  const problem = placementProblem(state, found.areaId, x, y, found.obj.def, objectId);
+  if (problem) return fail(problem);
   found.obj.x = x;
   found.obj.y = y;
+  bumpWorld(state);
+  stopUnreachableWork(state);
   return ok();
 }
 
@@ -404,11 +662,14 @@ export function removeObject(state, objectId) {
   const found = objectById(state, objectId);
   if (!found) return fail('Unknown object.');
   if (found.obj.prefab) return fail('This structure cannot be removed.');
+  if (STRUCTURES[found.obj.def].kind === 'clutter') return clearClutter(state, objectId);
   if (state.mushrooms.some((m) => m.work?.structureId === objectId)) return fail('Mushrooms are working here.');
   const def = STRUCTURES[found.obj.def];
   if (def.kind === 'home' && residents(state).length > residentCap(state) - def.capacity) return fail('Residents live here — archive someone first.');
   const area = state.world.areas[found.areaId];
   area.objects = area.objects.filter((o) => o.id !== objectId);
+  bumpWorld(state);
+  stopUnreachableWork(state);
   return ok();
 }
 
@@ -417,11 +678,11 @@ export function paintTerrain(state, areaId, x, y, code) {
   if (!area) return fail('Unknown area.');
   if (!PAINTABLE_TERRAIN.includes(code)) return fail('Cannot paint that.');
   const cur = area.tiles[y]?.[x];
-  if (!cur || cur === 'w' || cur === 'p' || cur === 'x') return fail('This ground cannot be changed.');
+  if (!cur || TERRAIN[cur]?.blocks || cur === 'p' || cur === 'x') return fail('This ground cannot be changed.');
   if (cur === code) return fail('Already that terrain.');
   if (!canAfford(state, TERRAIN_PAINT_COST)) return fail('Not enough leaves.');
   pay(state, TERRAIN_PAINT_COST);
-  area.tiles[y] = area.tiles[y].slice(0, x) + code + area.tiles[y].slice(x + 1);
+  setTile(area, x, y, code);
   return ok();
 }
 
@@ -497,7 +758,9 @@ export function assignJob(state, uid, jobId, now) {
   const job = JOB_BY_ID[jobId];
   const others = workersOn(state, jobId).filter((x) => x.uid !== uid);
   const structures = allObjects(state).filter((o) => o.def === job.structure && o.state === 'built');
-  const free = structures.find((o) => others.filter((x) => x.work.structureId === o.id).length < STRUCTURES[o.def].slots);
+  const reachable = structures.filter((o) => objectReachable(state, o.id));
+  if (!reachable.length) return fail('Your mushrooms cannot reach that workstation — bridge the water or clear the thicket.');
+  const free = reachable.find((o) => others.filter((x) => x.work.structureId === o.id).length < STRUCTURES[o.def].slots);
   if (!free) return fail('All workstations for this job are full. Build or restore another.');
   if (m.work?.jobId === jobId) return ok();
   m.work = { jobId, structureId: free.id, anchor: now, cycles: 0, carry: {}, assignedAt: now };
@@ -676,7 +939,7 @@ export function discoverMoonstone(state, now) {
   if (area) {
     let spot = null;
     for (let y = 0; y < AREA_H && !spot; y++) for (let x = 0; x < AREA_W && !spot; x++) {
-      if (tileFree(state, 'roothollow', x, y) && y > 5) spot = { x, y };
+      if (tileFree(state, 'roothollow', x, y) && y > 3 && !TERRAIN[area.tiles[y][x]]?.blocks && isReachable(state, 'roothollow', x, y)) spot = { x, y };
     }
     spot = spot || { x: 0, y: 0 };
     area.objects.push({ id: 'o' + state.nextObjectId++, def: 'moonstone_ring', x: spot.x, y: spot.y, state: 'built', prefab: true });
@@ -972,7 +1235,9 @@ export function devUnlockAll(state, now) {
       for (const d of dirs) if (!done && expansionOption(state, id, d).ok) { expandForest(state, id, d, now); done = true; }
       if (done) break;
     }
+    devConnectAll(state);
     for (const a of Object.values(state.world.areas)) for (const o of a.objects) {
+      if (STRUCTURES[o.def].kind === 'clutter') continue;
       o.state = 'built';
       const def = STRUCTURES[o.def];
       if (def.job) state.discoveries.jobs[def.job] = true;
@@ -982,6 +1247,47 @@ export function devUnlockAll(state, now) {
   state.breedingsCompleted = Math.max(state.breedingsCompleted, 2);
   discoverMoonstone(state, now);
   checkUnlocks(state, now);
+}
+
+/**
+ * Dev / test helper: make every structure reachable by cutting the shortest
+ * route from home through thicket (cleared) and water (bridged).
+ */
+export function devConnectAll(state) {
+  const targets = [];
+  for (const [id, a] of Object.entries(state.world.areas)) for (const o of a.objects) if (STRUCTURES[o.def].kind !== 'clutter' && o.def !== 'bridge') targets.push({ id, o, a });
+  for (const { id, o, a } of targets) {
+    if (objectReachable(state, o.id)) continue;
+    const reach = reachableTiles(state);
+    const goal = (a.cx * AREA_W + o.x) + ',' + (a.cy * AREA_H + o.y);
+    const prev = new Map();
+    const queue = [...reach].map((k) => k.split(',').map(Number));
+    const seen = new Set(reach);
+    let found = null;
+    while (queue.length && !found) {
+      const [x, y] = queue.shift();
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const k = (x + dx) + ',' + (y + dy);
+        if (seen.has(k) || globalTile(state, x + dx, y + dy) === null) continue;
+        seen.add(k);
+        prev.set(k, x + ',' + y);
+        if (k === goal) { found = k; break; }
+        queue.push([x + dx, y + dy]);
+      }
+    }
+    for (let k = found; k && !reach.has(k); k = prev.get(k)) {
+      const [gx, gy] = k.split(',').map(Number);
+      const cx = Math.floor(gx / AREA_W);
+      const cy = Math.floor(gy / AREA_H);
+      const ar = areaAt(state, cx, cy).area;
+      const lx = gx - cx * AREA_W;
+      const ly = gy - cy * AREA_H;
+      const t = ar.tiles[ly][lx];
+      if (t === 'u') setTile(ar, lx, ly, 'g');
+      else if (TERRAIN[t]?.water && !ar.objects.some((q) => q.x === lx && q.y === ly)) ar.objects.push({ id: 'o' + state.nextObjectId++, def: 'bridge', x: lx, y: ly, state: 'built', prefab: false });
+    }
+    bumpWorld(state);
+  }
 }
 
 export function devFinishIncubations(state, now) {
