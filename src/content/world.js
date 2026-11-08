@@ -209,3 +209,18 @@ export const STAGES = [
 ];
 export const STAGE_BY_ID = Object.fromEntries(STAGES.map((s) => [s.id, s]));
 export const STAGE_IDS = STAGES.map((s) => s.id);
+
+/**
+ * Custom decorations made in the Sprite Workshop become buildable decorations.
+ * Called once at startup, before any save is loaded.
+ */
+export function registerCustomDecorations(sprites = {}) {
+  for (const [key, sp] of Object.entries(sprites)) {
+    if (!key.startsWith('custom:') || sp.category !== 'decoration') continue;
+    const id = 'custom_' + key.slice(7).replace(/[^a-z0-9_]/gi, '_');
+    STRUCTURES[id] = {
+      name: sp.name || 'Decoration', kind: 'decor', cost: sp.cost || { twigs: 3, leaves: 2 }, buildable: true,
+      habitat: sp.habitat || null, sprite: 'flowers', custom: true, overrideKey: key, // drawn from its own sprite
+    };
+  }
+}

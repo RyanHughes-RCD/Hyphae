@@ -12,6 +12,58 @@ const CAP_BOTTOM = 14;
 
 const cache = new Map();
 
+// ---------- sprite overrides (from assets/sprites.json, made in the Sprite Workshop) ----------
+let OVERRIDES = {};
+
+/** Install edited sprites. Mushroom parts are colour-role masks; see ROLE_COLOURS below. */
+export function setSpriteOverrides(sprites) {
+  OVERRIDES = sprites || {};
+  cache.clear();
+  ovCanvasCache.clear();
+}
+
+export function spriteOverride(key) {
+  return OVERRIDES[key] || null;
+}
+
+/** Palette index alphabet for full-colour sprites ('.' = transparent). */
+export const PALETTE_ALPHABET = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+const ovCanvasCache = new Map();
+
+/** A full-colour override (structure, scenery, tile) rendered to a canvas, or null. */
+export function overrideCanvas(key) {
+  const ov = OVERRIDES[key];
+  if (!ov || ov.kind !== 'color') return null;
+  if (ovCanvasCache.has(key)) return ovCanvasCache.get(key);
+  const c = makeCanvas(ov.w, ov.h);
+  const ctx = c.getContext('2d');
+  const img = ctx.createImageData(ov.w, ov.h);
+  const pal = (ov.palette || []).map((hx) => {
+    const v = hx.replace('#', '');
+    return [parseInt(v.slice(0, 2), 16), parseInt(v.slice(2, 4), 16), parseInt(v.slice(4, 6), 16), v.length >= 8 ? parseInt(v.slice(6, 8), 16) : 255];
+  });
+  for (let y = 0; y < ov.h; y++) for (let x = 0; x < ov.w; x++) {
+    const ch = ov.rows[y]?.[x];
+    const i = ch === undefined || ch === '.' ? -1 : PALETTE_ALPHABET.indexOf(ch);
+    if (i < 0 || !pal[i]) continue;
+    const k = (y * ov.w + x) * 4;
+    img.data[k] = pal[i][0]; img.data[k + 1] = pal[i][1]; img.data[k + 2] = pal[i][2]; img.data[k + 3] = pal[i][3];
+  }
+  ctx.putImageData(img, 0, 0);
+  ovCanvasCache.set(key, c);
+  return c;
+}
+
+/** Each character of a mushroom-part mask names a colour role ('.' = empty). */
+export const PART_ROLES = {
+  cap: { b: 'cap colour', l: 'highlight', d: 'shade' },
+  stem: { s: 'stem colour', k: 'stem shade', r: 'ring', c: 'crystal' },
+  face: { e: 'eye', p: 'blush' },
+  marking: { a: 'accent', m: 'soft accent', w: 'pale glint', y: 'star' },
+  gills: { g: 'gill colour', k: 'gill shade', L: 'gill highlight', v: 'velvet' },
+};
+const roleAt = (ov, x, y) => (ov.rows[y] && ov.rows[y][x] !== undefined && ov.rows[y][x] !== '.' ? ov.rows[y][x] : null);
+
 function makeCanvas(w, h) {
   const c = document.createElement('canvas');
   c.width = w;
@@ -120,8 +172,18 @@ export function mushroomSprite(m) {
   const H = SPRITE_H;
   const px = new Array(W * H).fill(null);
   const set = (x, y, c) => { if (x >= 0 && y >= 0 && x < W && y < H) px[y * W + x] = c; };
-  const cap = capMask(g.cap);
-  const stem = stemMask(g.stem);
+  const capOv = spriteOverride('cap:' + g.cap);
+  const stemOv = spriteOverride('stem:' + g.stem);
+  const faceOv = spriteOverride('face:default');
+  const markOv = spriteOverride('marking:' + g.markings);
+  const gillOv = spriteOverride('gills:' + g.gills);
+  const maskOf = (ov) => {
+    const m = new Set();
+    for (let y = 0; y < Math.min(H, ov.rows.length); y++) for (let x = 0; x < W; x++) if (roleAt(ov, x, y)) m.add(x + ',' + y);
+    return m;
+  };
+  const cap = capOv ? maskOf(capOv) : capMask(g.cap);
+  const stem = stemOv ? maskOf(stemOv) : stemMask(g.stem);
   const rng = makeRng(g.pattern + 17);
 
   const capC = g.color;
@@ -133,18 +195,28 @@ export function mushroomSprite(m) {
   const outline = shade(mix(capC, [20, 10, 30], 0.55), -0.55);
 
   // stem
-  for (const k of stem) {
-    const [x, y] = k.split(',').map(Number);
-    const right = !has(stem, x + 1, y);
-    set(x, y, right || y > 24 ? stemDark : stemC);
+  if (stemOv) {
+    const col = { s: stemC, k: stemDark, r: shade(stemC, -0.12), c: [150, 230, 255] };
+    for (const k of stem) { const [x, y] = k.split(',').map(Number); set(x, y, col[roleAt(stemOv, x, y)] || stemC); }
+  } else {
+    for (const k of stem) {
+      const [x, y] = k.split(',').map(Number);
+      const right = !has(stem, x + 1, y);
+      set(x, y, right || y > 24 ? stemDark : stemC);
+    }
+    if (g.stem === 'crystal') for (const [x, y] of [[CX - 1, 18], [CX + 1, 20], [CX - 2, 22], [CX, 23]]) set(x, y, [150, 230, 255]);
+    if (g.stem === 'ringed') for (let x = CX - 5; x < CX + 5; x++) set(x, 18, shade(stemC, -0.12));
   }
-  if (g.stem === 'crystal') for (const [x, y] of [[CX - 1, 18], [CX + 1, 20], [CX - 2, 22], [CX, 23]]) set(x, y, [150, 230, 255]);
-  if (g.stem === 'ringed') for (let x = CX - 5; x < CX + 5; x++) set(x, 18, shade(stemC, -0.12));
   // face on the stem
-  const eyeY = 19;
-  set(CX - 2, eyeY, [40, 26, 30]); set(CX + 1, eyeY, [40, 26, 30]);
-  set(CX - 2, eyeY - 1, [40, 26, 30]); set(CX + 1, eyeY - 1, [40, 26, 30]);
-  set(CX - 3, eyeY + 1, [240, 150, 150]); set(CX + 2, eyeY + 1, [240, 150, 150]);
+  if (faceOv) {
+    const col = { e: [40, 26, 30], p: [240, 150, 150] };
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const r = roleAt(faceOv, x, y); if (r && col[r]) set(x, y, col[r]); }
+  } else {
+    const eyeY = 19;
+    set(CX - 2, eyeY, [40, 26, 30]); set(CX + 1, eyeY, [40, 26, 30]);
+    set(CX - 2, eyeY - 1, [40, 26, 30]); set(CX + 1, eyeY - 1, [40, 26, 30]);
+    set(CX - 3, eyeY + 1, [240, 150, 150]); set(CX + 2, eyeY + 1, [240, 150, 150]);
+  }
 
   // cap with shading
   let top = 99;
@@ -152,15 +224,23 @@ export function mushroomSprite(m) {
   for (const k of cap) {
     const [x, y] = k.split(',').map(Number);
     let c = capC;
-    const hd = Math.hypot(x - (CX - 4), y - (top + 3));
-    if (hd < 3.2) c = capLight;
-    else if (!has(cap, x, y + 1) || !has(cap, x + 1, y) || y >= CAP_BOTTOM - 1) c = capDark;
+    if (capOv) c = { b: capC, l: capLight, d: capDark }[roleAt(capOv, x, y)] || capC;
+    else {
+      const hd = Math.hypot(x - (CX - 4), y - (top + 3));
+      if (hd < 3.2) c = capLight;
+      else if (!has(cap, x, y + 1) || !has(cap, x + 1, y) || y >= CAP_BOTTOM - 1) c = capDark;
+    }
     set(x, y, c);
   }
   // markings
   const capPts = [...cap].map((k) => k.split(',').map(Number)).filter(([x, y]) => has(cap, x, y - 1) && has(cap, x, y + 1) && has(cap, x - 1, y) && has(cap, x + 1, y) && y < CAP_BOTTOM - 1);
   const mark = (x, y, c = accent) => { if (has(cap, x, y) && y < CAP_BOTTOM - 1) set(x, y, c); };
-  switch (g.markings) {
+  if (markOv) {
+    // an edited marking is a stamp, clipped to the inside of the cap
+    const col = { a: accent, m: mix(accent, capC, 0.3), w: mix(capC, [255, 255, 255], 0.35), y: [255, 250, 210] };
+    const inside = new Set(capPts.map(([x, y]) => x + ',' + y));
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const r = roleAt(markOv, x, y); if (r && col[r] && inside.has(x + ',' + y)) set(x, y, col[r]); }
+  } else switch (g.markings) {
     case 'spots':
       for (let i = 0; i < 5; i++) {
         const [x, y] = rng.pick(capPts) || [CX, 8];
@@ -205,10 +285,18 @@ export function mushroomSprite(m) {
     if (y < 0 || Math.abs(x - CX) > 9) continue;
     const under = y + 1;
     if (has(cap, x, under)) continue;
+    if (gillOv) {
+      const col = { g: gillBase, k: gillDark, L: shade(gillBase, 0.2), v: mix(gillBase, [255, 220, 230], 0.3) };
+      const r0 = roleAt(gillOv, x, 0);
+      const r1 = roleAt(gillOv, x, 1);
+      if (r0 && col[r0] && !(r0 === 'v' && has(stem, x, under))) set(x, under, col[r0]);
+      if (r1 && col[r1] && !has(stem, x, under + 1)) set(x, under + 1, col[r1]);
+      continue;
+    }
     let c = gillBase;
     switch (g.gills) {
       case 'fine': c = x % 2 ? gillBase : gillDark; break;
-      case 'deep': c = gillDark; set(x, under + 1, x % 2 ? gillDark : null); break;
+      case 'deep': c = gillDark; if (x % 2 && !has(stem, x, under + 1)) set(x, under + 1, gillDark); break;
       case 'pored': c = x % 3 === 0 ? gillDark : gillBase; break;
       case 'ridged': c = x % 2 === 0 ? shade(gillBase, 0.2) : gillDark; break;
       case 'toothed': c = gillBase; if (x % 3 === 1 && !has(stem, x, under + 1)) set(x, under + 1, gillDark); break;
@@ -252,6 +340,80 @@ export function mushroomSprite(m) {
   cache.set(key, res);
   if (cache.size > 400) cache.delete(cache.keys().next().value);
   return res;
+}
+
+// ---------- defaults for the Sprite Workshop (role masks from the procedural rules) ----------
+
+function gridRows(w, h, fn) {
+  const rows = [];
+  for (let y = 0; y < h; y++) { let r = ''; for (let x = 0; x < w; x++) r += fn(x, y) || '.'; rows.push(r); }
+  return rows;
+}
+
+export function defaultCapRoles(type) {
+  const cap = capMask(type);
+  let top = 99;
+  for (const k of cap) top = Math.min(top, Number(k.split(',')[1]));
+  return gridRows(SPRITE_W, SPRITE_H, (x, y) => {
+    if (!has(cap, x, y)) return null;
+    if (Math.hypot(x - (CX - 4), y - (top + 3)) < 3.2) return 'l';
+    if (!has(cap, x, y + 1) || !has(cap, x + 1, y) || y >= CAP_BOTTOM - 1) return 'd';
+    return 'b';
+  });
+}
+
+export function defaultStemRoles(type) {
+  const stem = stemMask(type);
+  const crystal = new Set([[CX - 1, 18], [CX + 1, 20], [CX - 2, 22], [CX, 23]].map((p) => p.join(',')));
+  return gridRows(SPRITE_W, SPRITE_H, (x, y) => {
+    const ringRow = type === 'ringed' && y === 18 && x >= CX - 5 && x < CX + 5;
+    if (type === 'crystal' && crystal.has(x + ',' + y)) return 'c';
+    if (ringRow) return 'r';
+    if (!has(stem, x, y)) return null;
+    return !has(stem, x + 1, y) || y > 24 ? 'k' : 's';
+  });
+}
+
+export function defaultFaceRoles() {
+  const e = new Set([[CX - 2, 19], [CX + 1, 19], [CX - 2, 18], [CX + 1, 18]].map((p) => p.join(',')));
+  const p = new Set([[CX - 3, 20], [CX + 2, 20]].map((q) => q.join(',')));
+  return gridRows(SPRITE_W, SPRITE_H, (x, y) => (e.has(x + ',' + y) ? 'e' : p.has(x + ',' + y) ? 'p' : null));
+}
+
+/** A marking stamp: the procedural pattern laid over every cap pixel (one fixed layout). */
+export function defaultMarkingRoles(type) {
+  const area = [];
+  for (let y = 1; y < CAP_BOTTOM - 1; y++) for (let x = 2; x < SPRITE_W - 2; x++) area.push([x, y]);
+  const rng = makeRng(4242);
+  const out = new Map();
+  const mark = (x, y, r = 'a') => out.set(x + ',' + y, r);
+  switch (type) {
+    case 'spots': for (let i = 0; i < 6; i++) { const [x, y] = rng.pick(area); mark(x, y); mark(x + 1, y); mark(x, y + 1); mark(x + 1, y + 1); } break;
+    case 'stripes': for (const [x, y] of area) if ((x + Math.floor(y / 3)) % 4 === 0) mark(x, y, 'm'); break;
+    case 'speckles': for (const [x, y] of area) if (rng.chance(0.13)) mark(x, y); break;
+    case 'rings': for (const [x, y] of area) { const d = Math.round(Math.hypot(x - CX, (y - CAP_BOTTOM) * 1.3)); if (d % 4 === 0) mark(x, y, 'm'); } break;
+    case 'patches': for (let i = 0; i < 3; i++) { const [cx, cy] = rng.pick(area); for (const [x, y] of area) if (Math.hypot(x - cx, y - cy) < 2.4) mark(x, y, 'm'); } break;
+    case 'constellation': {
+      const stars = [[7, 5], [11, 3], [15, 7], [17, 10]];
+      for (let i = 0; i < stars.length - 1; i++) {
+        const [x0, y0] = stars[i];
+        const [x1, y1] = stars[i + 1];
+        const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0));
+        for (let k = 1; k < n; k++) mark(Math.round(x0 + ((x1 - x0) * k) / n), Math.round(y0 + ((y1 - y0) * k) / n), 'w');
+      }
+      for (const [x, y] of stars) mark(x, y, 'y');
+      break;
+    }
+    default: break;
+  }
+  return gridRows(SPRITE_W, SPRITE_H, (x, y) => out.get(x + ',' + y));
+}
+
+/** Gills: two rows under the cap — the underside, and anything hanging below it. */
+export function defaultGillRoles(type) {
+  const row0 = (x) => ({ fine: x % 2 ? 'g' : 'k', deep: 'k', pored: x % 3 === 0 ? 'k' : 'g', ridged: x % 2 === 0 ? 'L' : 'k', toothed: 'g', velvet: 'v' }[type] || 'g');
+  const row1 = (x) => (type === 'deep' ? (x % 2 ? 'k' : null) : type === 'toothed' ? (x % 3 === 1 ? 'k' : null) : null);
+  return [gridRows(SPRITE_W, 1, (x) => row0(x))[0], gridRows(SPRITE_W, 1, (x) => row1(x))[0]];
 }
 
 const tintCache = new Map();

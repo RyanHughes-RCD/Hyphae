@@ -1,5 +1,6 @@
 // Procedural pixel-art tiles and structures. Coordinates are logical pixels.
 import { TERRAIN } from '../content/world.js';
+import { overrideCanvas } from './sprites.js';
 
 export const TILE = 16;
 
@@ -22,6 +23,15 @@ export function drawTile(ctx, code, tx, ty, t, seed = 0, backdrop = false) {
   const T = TERRAIN[code] || TERRAIN.g;
   const x0 = tx * TILE;
   const y0 = ty * TILE;
+  const ov = code !== 'u' && overrideCanvas('tile:' + code);
+  if (ov) {
+    // an edited tile from the Sprite Workshop (translucent over the grass painting like the original)
+    const a = backdrop && code in BACKDROP_ALPHA && code !== 'g' ? BACKDROP_ALPHA[code] : 1;
+    ctx.globalAlpha = a;
+    ctx.drawImage(ov, x0, y0, TILE, TILE);
+    ctx.globalAlpha = 1;
+    return;
+  }
   if (code === 'u') return; // thicket is drawn as undergrowth by the forest view
   if (code === 'r') { drawRiver(ctx, x0, y0, tx, ty, t); return; }
   if (backdrop && code in BACKDROP_ALPHA) {
@@ -240,10 +250,16 @@ const ART = {
   },
 };
 
+/** Draw edited art anchored to the bottom-centre of its tile (taller sprites rise above it). */
+function drawOverride(ctx, ov, x, y) {
+  ctx.drawImage(ov, x + Math.round((TILE - ov.width) / 2), y + TILE - ov.height);
+}
+
 export function drawStructure(ctx, def, tx, ty, state, t) {
   const x = tx * TILE;
   const y = ty * TILE;
-  const fn = ART[def.sprite] || ART.stones;
+  const ov = overrideCanvas(def.overrideKey || 'structure:' + def.sprite);
+  const fn = ov ? (c, xx, yy) => drawOverride(c, ov, xx, yy) : ART[def.sprite] || ART.stones;
   if (state === 'ruin') {
     ctx.globalAlpha = 0.45;
     fn(ctx, x, y, 0);
@@ -261,5 +277,10 @@ export function drawStructure(ctx, def, tx, ty, state, t) {
 
 /** Draw a piece of structure art at logical pixel (x, y) — used for the forest beyond the area. */
 export function drawArt(ctx, sprite, x, y, t) {
-  (ART[sprite] || ART.bush)(ctx, x, y, t);
+  const ov = overrideCanvas('structure:' + sprite);
+  if (ov) drawOverride(ctx, ov, x, y);
+  else (ART[sprite] || ART.bush)(ctx, x, y, t);
 }
+
+/** Every built-in piece of art, by name (for the Sprite Workshop). */
+export const ART_NAMES = Object.keys(ART);

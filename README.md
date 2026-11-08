@@ -66,6 +66,21 @@ when incubation starts; stats are always recalculated from genetics (never
 trusted from saves or imports); every cap is enforced in simulation code;
 offline progress is clamped to 8 hours and a backward clock grants nothing.
 
+## Sprite Workshop
+
+Every sprite can be edited (and new ones made) in the Sprite Workshop artifact.
+Saved sprites are merged into `assets/sprites.json`, which the game loads at
+startup; anything not in that file is drawn by the game's own code.
+
+```bash
+node tools/import-sprites.mjs <folder of saved workshop docs>   # validates and merges
+```
+
+Keys: `structure:<art>`, `tile:<terrain>`, `cap:<shape>`, `stem:<shape>`,
+`marking:<pattern>`, `gills:<type>`, `face:default`, `custom:<name>`. Mushroom
+parts are colour-role masks (each mushroom recolours them from its genes);
+everything else is full colour. Custom decorations become buildable.
+
 ## Art and font credits
 
 - **Pixeloid** font by GGBotNet (<https://ggbot.net/fonts/>), licensed under the
