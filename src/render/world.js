@@ -1,0 +1,182 @@
+// Procedural pixel-art tiles and structures. Coordinates are logical pixels.
+import { TERRAIN } from '../content/world.js';
+
+export const TILE = 16;
+
+function r(ctx, c, x, y, w = 1, h = 1) {
+  ctx.fillStyle = c;
+  ctx.fillRect(x, y, w, h);
+}
+
+function noise(x, y, s = 0) {
+  let n = (x * 374761393 + y * 668265263 + s * 2147483647) | 0;
+  n = (n ^ (n >>> 13)) * 1274126177;
+  return ((n ^ (n >>> 16)) >>> 0) / 4294967296;
+}
+
+export function drawTile(ctx, code, tx, ty, t, seed = 0) {
+  const T = TERRAIN[code] || TERRAIN.g;
+  const x0 = tx * TILE;
+  const y0 = ty * TILE;
+  r(ctx, T.color, x0, y0, TILE, TILE);
+  for (let i = 0; i < 7; i++) {
+    const nx = Math.floor(noise(tx, ty, i + seed) * 15);
+    const ny = Math.floor(noise(ty, tx, i + 9 + seed) * 15);
+    r(ctx, T.dark, x0 + nx, y0 + ny, code === 's' ? 2 : 1, 1);
+  }
+  if (code === 'g' || code === 'm') {
+    for (let i = 0; i < 3; i++) {
+      const nx = Math.floor(noise(tx, ty, 40 + i) * 14) + 1;
+      const ny = Math.floor(noise(ty, tx, 50 + i) * 12) + 3;
+      r(ctx, code === 'g' ? '#7cbf5a' : '#6bb075', x0 + nx, y0 + ny - 2, 1, 2);
+    }
+    if (noise(tx, ty, 77 + seed) > 0.86) {
+      const nx = Math.floor(noise(tx, ty, 78) * 12) + 2;
+      const ny = Math.floor(noise(ty, tx, 79) * 12) + 2;
+      r(ctx, ['#f6e27a', '#f09ac0', '#ffffff', '#9ac8ff'][Math.floor(noise(tx, ty, 80) * 4)], x0 + nx, y0 + ny, 1, 1);
+    }
+  } else if (code === 'l') {
+    for (let i = 0; i < 5; i++) {
+      const nx = Math.floor(noise(tx, ty, 60 + i) * 14);
+      const ny = Math.floor(noise(ty, tx, 70 + i) * 14);
+      r(ctx, ['#c2903a', '#b4652e', '#d9b34a'][i % 3], x0 + nx, y0 + ny, 2, 1);
+    }
+  } else if (code === 'w') {
+    const wave = Math.floor(t * 2 + tx + ty) % 4;
+    r(ctx, '#7cb8e0', x0 + 2 + wave * 3, y0 + 4 + (ty % 2) * 6, 4, 1);
+    r(ctx, '#3f78a8', x0, y0 + 15, TILE, 1);
+  } else if (code === 'x') {
+    if (Math.floor(t * 2 + noise(tx, ty) * 10) % 5 === 0) r(ctx, '#d8c8ff', x0 + Math.floor(noise(tx, ty, 3) * 14), y0 + Math.floor(noise(ty, tx, 4) * 14), 1, 1);
+  } else if (code === 'p') {
+    r(ctx, '#c8b07a', x0 + 3, y0 + 5, 2, 1);
+    r(ctx, '#c8b07a', x0 + 10, y0 + 11, 2, 1);
+  }
+}
+
+// --- structure art helpers ---
+const C = {
+  wood: '#8a5a32', woodL: '#b07a44', woodD: '#5a3a1e', soil: '#5a3e28', leaf: '#4f9a3c', leafL: '#7cc25a', leafD: '#2f6a2a',
+  stone: '#9a9aa4', stoneL: '#c4c4cc', stoneD: '#686870', berry: '#d23a5a', cream: '#efe2c4', red: '#c8402e', water: '#5a9ad0',
+};
+
+const ART = {
+  bed(ctx, x, y) {
+    r(ctx, C.woodD, x + 1, y + 6, 14, 9); r(ctx, C.soil, x + 2, y + 7, 12, 7);
+    for (let i = 0; i < 4; i++) { r(ctx, C.leaf, x + 3 + i * 3, y + 4, 1, 4); r(ctx, C.leafL, x + 2 + i * 3, y + 5, 1, 1); r(ctx, C.berry, x + 4 + i * 3, y + 6, 1, 1); }
+    r(ctx, C.woodL, x + 1, y + 6, 14, 1);
+  },
+  bush(ctx, x, y) {
+    r(ctx, C.leafD, x + 1, y + 5, 14, 10); r(ctx, C.leaf, x + 2, y + 3, 12, 10); r(ctx, C.leafL, x + 4, y + 4, 4, 2);
+    for (const [a, b] of [[4, 8], [9, 6], [11, 10], [6, 11]]) r(ctx, C.berry, x + a, y + b, 2, 2);
+  },
+  nook(ctx, x, y, t) {
+    r(ctx, '#3f7a4b', x, y + 8, 16, 7); r(ctx, '#5a9a5a', x + 1, y + 7, 14, 2);
+    const p = Math.sin(t * 2) > 0 ? 1 : 0;
+    r(ctx, '#e8d8f0', x + 5, y + 3 - p, 6, 5); r(ctx, '#c8a8e0', x + 6, y + 2 - p, 4, 1); r(ctx, '#ffffff', x + 6, y + 4 - p, 1, 1);
+    r(ctx, '#b88ad8', x + 3, y + 6, 2, 2); r(ctx, '#b88ad8', x + 11, y + 5, 2, 2);
+  },
+  stump(ctx, x, y) {
+    r(ctx, C.woodD, x + 3, y + 6, 10, 9); r(ctx, C.woodL, x + 3, y + 5, 10, 3); r(ctx, '#d9b07a', x + 5, y + 6, 6, 1);
+    r(ctx, '#ffd75e', x + 6, y + 3, 2, 2); r(ctx, '#ffd75e', x + 9, y + 4, 2, 2); r(ctx, '#fff4b0', x + 6, y + 3, 1, 1);
+  },
+  sporebed(ctx, x, y) {
+    r(ctx, C.woodD, x, y + 9, 16, 6); r(ctx, '#3a2a1e', x + 1, y + 10, 14, 4);
+    for (const [a, c] of [[2, '#d9c27a'], [6, '#c87a5a'], [10, '#e0d0b0'], [13, '#d9c27a']]) { r(ctx, '#efe2c4', x + a + 1, y + 7, 1, 3); r(ctx, c, x + a, y + 5, 3, 2); }
+  },
+  bench(ctx, x, y) {
+    r(ctx, C.woodL, x + 1, y + 6, 14, 3); r(ctx, C.woodD, x + 2, y + 9, 2, 6); r(ctx, C.woodD, x + 12, y + 9, 2, 6);
+    r(ctx, C.stoneD, x + 9, y + 3, 4, 3); r(ctx, C.wood, x + 4, y + 4, 4, 2);
+  },
+  site(ctx, x, y) {
+    r(ctx, C.woodD, x + 2, y + 2, 1, 13); r(ctx, C.woodD, x + 13, y + 2, 1, 13); r(ctx, C.woodL, x + 2, y + 4, 12, 1); r(ctx, C.woodL, x + 2, y + 9, 12, 1);
+    r(ctx, C.stone, x + 5, y + 12, 6, 3); r(ctx, C.woodL, x + 4, y + 11, 3, 1);
+  },
+  reeds(ctx, x, y, t) {
+    for (let i = 0; i < 6; i++) { const sw = Math.round(Math.sin(t + i) * 0.6); r(ctx, '#5a8a3a', x + 2 + i * 2 + sw, y + 3 + (i % 3), 1, 12 - (i % 3)); r(ctx, '#8a5a32', x + 2 + i * 2 + sw, y + 2 + (i % 3), 1, 2); }
+    r(ctx, '#bfe8ff', x + 5, y + 9, 1, 1); r(ctx, '#bfe8ff', x + 10, y + 7, 1, 1);
+  },
+  barrel(ctx, x, y) {
+    r(ctx, C.wood, x + 3, y + 3, 10, 12); r(ctx, C.woodD, x + 3, y + 6, 10, 1); r(ctx, C.woodD, x + 3, y + 11, 10, 1); r(ctx, C.water, x + 4, y + 3, 8, 2);
+  },
+  nest(ctx, x, y) {
+    r(ctx, '#a8803a', x + 2, y + 9, 12, 5); r(ctx, '#c8a050', x + 3, y + 8, 10, 2); r(ctx, '#f4f0e0', x + 5, y + 7, 3, 3); r(ctx, '#d8e8f8', x + 8, y + 7, 3, 3);
+  },
+  dig(ctx, x, y) {
+    r(ctx, '#3a2818', x + 3, y + 9, 10, 5); r(ctx, '#7a5434', x + 2, y + 8, 12, 1); r(ctx, '#7a5434', x + 13, y + 7, 2, 2);
+    r(ctx, C.woodL, x + 11, y + 1, 1, 8); r(ctx, C.stone, x + 10, y + 8, 3, 2);
+  },
+  lookout(ctx, x, y) {
+    r(ctx, C.woodD, x + 5, y + 4, 6, 11); r(ctx, C.woodL, x + 4, y + 3, 8, 2); r(ctx, C.wood, x + 6, y + 6, 1, 7); r(ctx, '#ffe066', x + 7, y + 1, 2, 2);
+  },
+  shrine(ctx, x, y, t) {
+    r(ctx, C.stoneD, x + 2, y + 4, 2, 11); r(ctx, C.stoneD, x + 12, y + 4, 2, 11); r(ctx, C.stone, x + 1, y + 2, 14, 3); r(ctx, C.stoneL, x + 2, y + 2, 12, 1);
+    const a = 0.5 + 0.5 * Math.sin(t * 2);
+    ctx.fillStyle = `rgba(200,180,255,${0.4 + 0.4 * a})`; ctx.fillRect(x + 6, y + 7, 4, 5);
+  },
+  grove(ctx, x, y, t) {
+    r(ctx, '#d8d8e8', x + 7, y + 6, 2, 9); r(ctx, '#a8b8e8', x + 2, y + 1, 12, 7); r(ctx, '#c8d8ff', x + 4, y + 2, 5, 2);
+    if (Math.sin(t * 3) > 0.3) r(ctx, '#ffffff', x + 11, y + 3, 1, 1);
+  },
+  circle(ctx, x, y) {
+    for (const [a, b] of [[1, 6], [12, 6], [1, 12], [12, 12], [6, 3], [6, 14]]) r(ctx, C.wood, x + a, y + b, 3, 2);
+    r(ctx, '#ff9a50', x + 7, y + 8, 2, 3); r(ctx, '#ffd75e', x + 7, y + 7, 2, 1);
+  },
+  table(ctx, x, y) {
+    r(ctx, C.woodL, x + 1, y + 7, 14, 2); r(ctx, C.woodD, x + 2, y + 9, 1, 6); r(ctx, C.woodD, x + 13, y + 9, 1, 6);
+    r(ctx, '#ff6a8a', x + 4, y + 3, 5, 4); r(ctx, '#fff0a0', x + 6, y + 3, 1, 4); r(ctx, '#9ff0e0', x + 10, y + 4, 3, 3);
+  },
+  home(ctx, x, y) {
+    r(ctx, C.cream, x + 4, y + 8, 8, 7); r(ctx, C.woodD, x + 7, y + 11, 2, 4); r(ctx, '#ffe9a0', x + 5, y + 9, 2, 2);
+    r(ctx, C.red, x + 1, y + 4, 14, 5); r(ctx, C.red, x + 3, y + 2, 10, 2); r(ctx, '#ffffff', x + 4, y + 4, 2, 1); r(ctx, '#ffffff', x + 10, y + 3, 2, 1);
+  },
+  cozyhome(ctx, x, y) {
+    r(ctx, C.cream, x + 2, y + 8, 12, 7); r(ctx, C.woodD, x + 7, y + 11, 2, 4); r(ctx, '#ffe9a0', x + 3, y + 9, 2, 2); r(ctx, '#ffe9a0', x + 11, y + 9, 2, 2);
+    r(ctx, '#7a5aa8', x, y + 4, 16, 5); r(ctx, '#7a5aa8', x + 2, y + 1, 12, 3); r(ctx, '#f6e27a', x + 4, y + 3, 2, 1); r(ctx, '#f6e27a', x + 10, y + 5, 2, 1);
+  },
+  flowers(ctx, x, y) {
+    for (const [a, b, c] of [[3, 6, '#f08cc0'], [8, 4, '#f6e27a'], [11, 9, '#9ac8ff'], [5, 11, '#ffffff'], [12, 3, '#f08cc0']]) { r(ctx, C.leaf, x + a, y + b + 1, 1, 3); r(ctx, c, x + a - 1, y + b, 3, 1); r(ctx, c, x + a, y + b - 1, 1, 3); }
+  },
+  fern(ctx, x, y) {
+    for (let i = 0; i < 5; i++) { r(ctx, C.leafD, x + 7, y + 3 + i * 2, 1, 2); r(ctx, C.leaf, x + 3 + i, y + 4 + i * 2, 4 - i, 1); r(ctx, C.leaf, x + 8, y + 4 + i * 2, 4 - i, 1); }
+  },
+  stones(ctx, x, y) {
+    for (const [a, b] of [[2, 9], [7, 11], [11, 8], [5, 5], [10, 4]]) { r(ctx, C.stoneD, x + a, y + b, 3, 3); r(ctx, C.stoneL, x + a, y + b, 2, 1); }
+  },
+  log(ctx, x, y) {
+    r(ctx, C.wood, x + 1, y + 8, 14, 6); r(ctx, C.woodL, x + 1, y + 8, 14, 1); r(ctx, '#d9b07a', x + 13, y + 9, 2, 4); r(ctx, C.leaf, x + 4, y + 7, 3, 1);
+  },
+  pond(ctx, x, y, t) {
+    r(ctx, C.stoneD, x + 1, y + 4, 14, 10); r(ctx, C.water, x + 2, y + 5, 12, 8); r(ctx, '#9ad0f0', x + 4 + (Math.floor(t * 2) % 5), y + 7, 3, 1); r(ctx, '#6ab04a', x + 10, y + 10, 3, 2);
+  },
+  lantern(ctx, x, y, t) {
+    r(ctx, C.woodD, x + 7, y + 7, 2, 8); r(ctx, C.woodD, x + 5, y + 2, 6, 1);
+    const a = 0.6 + 0.4 * Math.sin(t * 3);
+    ctx.fillStyle = `rgba(255,224,102,${a})`; ctx.fillRect(x + 5, y + 3, 6, 5);
+  },
+  moonstone(ctx, x, y, t) {
+    for (const [a, b] of [[2, 8], [12, 8], [7, 4], [7, 12], [4, 5], [10, 11]]) {
+      const a2 = 0.5 + 0.5 * Math.sin(t * 2 + a);
+      r(ctx, '#c8d0e8', x + a, y + b, 2, 2);
+      ctx.fillStyle = `rgba(220,230,255,${a2})`; ctx.fillRect(x + a, y + b, 1, 1);
+    }
+  },
+};
+
+export function drawStructure(ctx, def, tx, ty, state, t) {
+  const x = tx * TILE;
+  const y = ty * TILE;
+  const fn = ART[def.sprite] || ART.stones;
+  if (state === 'ruin') {
+    ctx.globalAlpha = 0.45;
+    fn(ctx, x, y, 0);
+    ctx.globalAlpha = 1;
+    // vines and rubble
+    r(ctx, '#3f6a2a', x + 2, y + 3, 1, 10); r(ctx, '#3f6a2a', x + 3, y + 6, 4, 1); r(ctx, '#3f6a2a', x + 11, y + 5, 1, 9);
+    r(ctx, '#6a6a70', x + 5, y + 13, 3, 2); r(ctx, '#6a6a70', x + 10, y + 12, 2, 2);
+    // restore marker
+    const p = Math.sin(t * 3) > 0 ? 0 : 1;
+    r(ctx, '#ffd75e', x + 12, y + p, 3, 3); r(ctx, '#5a3a00', x + 13, y + 1 + p, 1, 1);
+    return;
+  }
+  fn(ctx, x, y, t);
+}

@@ -1,0 +1,40 @@
+Mushroom Forest balance simulation — config v1, 60 runs × 20 rounds × 6 breedings
+
+Starters: best single stat avg 16.6, max 28 (target < 30)
+
+== Strategy: random
+ round   gen  bestStat  goalCON  traits  perks  maxPerkLv  mutated%  legendary  stat100
+     1   2.0      20.3     15.8    0.22   0.07        0.4       0.6       0.00     0.00
+     2   3.0      20.8     15.4    0.41   0.09        0.4       1.1       0.00     0.00
+     3   4.0      20.2     15.0    0.50   0.16        0.5       1.1       0.00     0.00
+     4   5.0      20.5     15.1    0.66   0.19        0.7       0.8       0.00     0.00
+     5   6.0      21.1     15.3    0.89   0.26        0.8       1.7       0.00     0.00
+    10  10.8      21.1     14.6    1.41   0.47        1.4       2.2       0.00     0.00
+    15  15.8      21.1     13.9    1.71   0.61        1.9       1.4       0.00     0.00
+    20  20.6      22.4     14.6    2.20   0.81        2.4       1.4       0.00     0.00
+  first Mutation appeared in 29/60 runs; median round 8
+
+== Strategy: line (select for Construction)
+ round   gen  bestStat  goalCON  traits  perks  maxPerkLv  mutated%  legendary  stat100
+     1   2.0      20.2     16.8    0.25   0.12        0.6       1.7       0.00     0.00
+     2   3.0      21.1     19.6    0.45   0.16        0.4       1.1       0.00     0.00
+     3   4.0      23.1     21.6    0.76   0.20        0.5       1.9       0.00     0.00
+     4   5.0      23.9     23.1    1.09   0.27        0.7       2.2       0.00     0.00
+     5   6.0      24.9     24.1    1.43   0.41        0.9       1.7       0.00     0.00
+    10  10.9      29.2     28.8    2.76   0.66        1.9       1.1       0.00     0.00
+    15  15.7      32.8     32.5    3.79   0.77        2.5       3.1       0.08     0.00
+    20  20.3      35.4     35.4    4.36   0.90        2.6       3.1       0.03     0.00
+  first Mutation appeared in 34/60 runs; median round 6
+
+== Strategy: donor (line + strong Magic Guest donor)
+ round   gen  bestStat  goalCON  traits  perks  maxPerkLv  mutated%  legendary  stat100
+     1  10.0      31.8     16.8    1.68   0.80        3.0      17.5       0.10     0.00
+     2  10.7      36.5     18.9    2.79   1.27        3.4      26.1       0.43     0.00
+     3  11.5      37.2     20.4    3.33   1.52        3.7      27.8       0.68     0.00
+     4  12.3      36.6     21.6    3.61   1.67        4.0      27.5       0.73     0.00
+     5  13.2      36.2     22.2    3.83   1.76        4.2      29.2       0.93     0.00
+    10  17.5      38.7     26.3    4.50   2.03        4.6      31.9       1.57     0.00
+    15  21.6      37.1     28.6    4.74   1.94        4.5      23.3       1.25     0.00
+    20  25.3      37.5     30.6    4.84   1.90        4.5      24.4       1.17     0.00
+  first Mutation appeared in 60/60 runs; median round 1
+

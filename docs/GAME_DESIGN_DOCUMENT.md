@@ -1916,3 +1916,23 @@ implementation, but may need your review:
 | N-3 | Breeding price | 15 Glimmer, flat (does not rise with generation or rarity) |
 | N-4 | Local-time phase hours | Dawn 05–08, Day 08–18, Dusk 18–21, Night 21–05 |
 | N-5 | Rare budget bonus size | +2 per Rare attribute (max +10 total) |
+
+### B.2 Balance simulation findings (first implementation)
+
+The first 20-generation simulation (`tools/simulate.js`, report in
+`docs/balance-report.txt`) with the approved defaults found:
+
+- Starters behave as intended: best single stat averages 16.6 and never
+  exceeds 28.
+- **Specialization is slower than intended.** Selective line-breeding for
+  one stat reaches only about 35 after 20 generations, and no 60+
+  specialists appear. Cause: new Advanced Traits target a uniformly random
+  stat (D-3), so only 1 in 8 helps the bred-for stat, and off-target
+  traits fill the 8-entry cap. Raising probabilities to the top of their
+  ranges only reaches about 38.
+- Mutations: the first one appears after a median of about 40 breedings once
+  unlocked; a strong donor raises mutation rates in offspring to about 25%.
+
+| ID | Item | Options |
+|---|---|---|
+| N-6 | Specialization speed | (a) keep uniform targeting and accept slow specialization; (b) weight new traits toward the offspring's top stats; (c) let the Breeding Insight tools (Affinity Tincture) steer traits; (d) raise the trait cap or let new traits replace the weakest-fit trait when full |
