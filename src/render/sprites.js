@@ -277,34 +277,44 @@ const GLOW_LEVEL = { none: 0, faint: 0.18, soft: 0.3, pulse: 0.3, radiant: 0.5 }
 export function drawMushroom(ctx, m, x, y, t = 0, opts = {}) {
   const spr = mushroomSprite(m);
   const rm = opts.reducedMotion;
+  // smooth: sub-pixel positions (forest camera); otherwise snap to whole pixels (UI cards)
+  const snap = opts.smooth ? (v) => v : Math.round;
   const bob = rm ? 0 : opts.bob || 0;
-  const yy = Math.round(y + bob);
-  // shadow
+  const footX = snap(x) + SPRITE_W / 2;
+  const footY = snap(y + bob) + SPRITE_H;
+  const sx = opts.squish?.sx ?? 1;
+  const sy = opts.squish?.sy ?? 1;
+  // shadow stays on the ground and widens as the mushroom squashes
   ctx.fillStyle = 'rgba(0,0,0,0.22)';
-  ctx.fillRect(Math.round(x) + 6, Math.round(y) + SPRITE_H - 2, 12, 2);
-  ctx.fillRect(Math.round(x) + 5, Math.round(y) + SPRITE_H - 1, 14, 1);
+  ctx.fillRect(footX - 6 * sx, snap(y) + SPRITE_H - 2, 12 * sx, 2);
+  ctx.fillRect(footX - 7 * sx, snap(y) + SPRITE_H - 1, 14 * sx, 1);
   // ordinary glow
   let lvl = GLOW_LEVEL[m.genes.glow] || 0;
   if (lvl) {
     if (m.genes.glow === 'pulse' && !rm) lvl *= 0.6 + 0.4 * Math.sin(t * 3);
-    const gx = Math.round(x) + 12;
-    const gy = yy + 9;
+    const gx = footX;
+    const gy = footY - (SPRITE_H - 9) * sy;
     const grd = ctx.createRadialGradient(gx, gy, 2, gx, gy, 16);
     grd.addColorStop(0, css(shade(spr.capColor, 0.5), lvl));
     grd.addColorStop(1, css(spr.capColor, 0));
     ctx.fillStyle = grd;
     ctx.fillRect(gx - 16, gy - 16, 32, 32);
   }
+  // body: scaled around the feet (squash and stretch) and optionally mirrored
+  ctx.save();
+  ctx.translate(footX, footY);
+  ctx.scale(opts.flip ? -sx : sx, sy);
   const mv = opts.mutationVisual;
   if (mv && (mv.kind === 'outline' || mv.kind === 'prism')) {
     const pulse = rm ? 0.8 : 0.55 + 0.45 * Math.sin(t * 2.5);
     const col = mv.kind === 'prism' ? hueRgb((t * 90) % 360) : mv.color;
     ctx.globalAlpha = pulse;
-    ctx.drawImage(tinted(spr.silhouette, col), Math.round(x) - 1, yy - 1);
+    ctx.drawImage(tinted(spr.silhouette, col), -SPRITE_W / 2 - 1, -SPRITE_H - 1);
     ctx.globalAlpha = 1;
   }
-  ctx.drawImage(spr.canvas, Math.round(x), yy);
-  if (mv) drawParticles(ctx, mv, x, yy, t, rm, m.genes.pattern);
+  ctx.drawImage(spr.canvas, -SPRITE_W / 2, -SPRITE_H);
+  ctx.restore();
+  if (mv) drawParticles(ctx, mv, footX - SPRITE_W / 2, footY - SPRITE_H * sy, t, rm, m.genes.pattern);
 }
 
 function hueRgb(h) {
@@ -325,8 +335,8 @@ function drawParticles(ctx, mv, x, y, t, rm, seed) {
       py = y + 10 + Math.sin(ang) * 6;
       a = rm ? 1 : 0.5 + 0.5 * Math.sin(t * 5 + i);
       ctx.fillStyle = css(mv.color, a);
-      ctx.fillRect(Math.round(px), Math.round(py) - 1, 1, 3);
-      ctx.fillRect(Math.round(px) - 1, Math.round(py), 3, 1);
+      ctx.fillRect((px), (py) - 1, 1, 3);
+      ctx.fillRect((px) - 1, (py), 3, 1);
       continue;
     } else if (mv.kind === 'spores') {
       const life = rm ? ph : (t * 0.35 + ph) % 1;
@@ -338,7 +348,7 @@ function drawParticles(ctx, mv, x, y, t, rm, seed) {
       px = x + 12 + Math.cos(ang) * 12;
       py = y + 8 + Math.sin(ang * 2) * 4;
       ctx.fillStyle = css(hueRgb((ang * 57) % 360), 0.85);
-      ctx.fillRect(Math.round(px), Math.round(py), 1, 1);
+      ctx.fillRect((px), (py), 1, 1);
       continue;
     } else {
       const life = rm ? ph : (t * 0.5 + ph) % 1;
@@ -347,7 +357,7 @@ function drawParticles(ctx, mv, x, y, t, rm, seed) {
       a = 0.7 * (1 - life);
     }
     ctx.fillStyle = css(mv.color, a);
-    ctx.fillRect(Math.round(px), Math.round(py), 1, 1);
+    ctx.fillRect((px), (py), 1, 1);
   }
 }
 

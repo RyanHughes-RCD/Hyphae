@@ -1,18 +1,28 @@
-// Forest scene: tiles, structures, walking/working mushrooms, day/night, rain.
-// Visual only — it reads the simulation and never decides outcomes (GDD 5.5).
+// Forest scene: a full-screen, pannable and zoomable camera over the current
+// area. Tiles, structures, gliding mushrooms with squash-and-stretch, day/night
+// and rain. Visual only — it reads the simulation and never decides outcomes.
 import { AREA_W, AREA_H, STRUCTURES, JOB_BY_ID } from '../content/world.js';
 import { MUTATION_BY_ID } from '../content/genetics.js';
 import { getConfig } from '../config.js';
-import { drawTile, drawStructure, TILE } from './world.js';
+import { drawTile, drawStructure, drawArt, TILE } from './world.js';
 import { drawMushroom, SPRITE_W, SPRITE_H, resourceColor } from './sprites.js';
 import { conditionsAt } from '../core/time.js';
-import { makeRng } from '../core/rng.js';
+import { makeRng, hash } from '../core/rng.js';
 
 const LW = AREA_W * TILE;
 const LH = AREA_H * TILE;
-const SPEED = 14;
-// keep mushrooms clear of the hedge border that overlaps the scene's edges
-const EDGE = 20;
+
+// movement (logical px, seconds)
+const MAX_SPEED = 16;
+const ACCEL = 4; // how quickly velocity follows the desired velocity
+const SLOW_RADIUS = 10; // start easing in this far from the target
+const EDGE = 12; // keep wandering mushrooms inside the area
+
+// camera
+const PAN_MARGIN = 60; // how far beyond the area's edge the view's centre may go
+const ZOOM_RANGE = 4; // max zoom = fit zoom × this
+const TAP_SLOP = 7; // CSS px a pointer may move and still count as a tap
+const GRASS_TILE = 160; // logical px covered by one copy of the grass painting
 
 const ANIM_FX = {
   water: '#8fd8ff', carry: '#c8955a', spores: '#d9c27a', hammer: '#ffe9a0', tend: '#f08cc0', dig: '#7a5434', glow: '#ffe066',
@@ -26,40 +36,127 @@ export class ForestView {
     this.areaId = 'clearing';
     this.agents = new Map();
     this.popups = [];
-    this.fx = [];
-    this.scale = 2;
     this.hover = null;
+    this.vw = 320;
+    this.vh = 480;
+    this.dpr = 1;
+    this.cam = { x: LW / 2, y: LH / 2, zoom: 2, target: null, vx: 0, vy: 0 };
+    this.fitted = false;
+    this.pointers = new Map();
+    this.gesture = null;
     this.terrainCache = { key: null, canvas: document.createElement('canvas') };
     this.terrainCache.canvas.width = LW;
     this.terrainCache.canvas.height = LH;
     this.rng = makeRng(Date.now() & 0xffff);
-    // painted grass backdrop (where the mushrooms live); relative URL works under a Pages subpath
+    this.decor = new Map();
+
+    // the painted grass, mirror-tiled so it repeats without hard seams
     this.grass = new Image();
+    this.grass.onload = () => { this.grassTile = mirrorTile(this.grass); };
     this.grass.src = 'assets/art/grass.webp';
-    this.grass.onload = () => { this.terrainCache.key = null; };
-    canvas.addEventListener('pointerdown', (e) => this.onPointer(e));
-    canvas.addEventListener('pointermove', (e) => { this.hover = this.toTile(e); });
+
+    canvas.addEventListener('pointerdown', (e) => this.onDown(e));
+    canvas.addEventListener('pointermove', (e) => this.onMove(e));
+    canvas.addEventListener('pointerup', (e) => this.onUp(e));
+    canvas.addEventListener('pointercancel', (e) => this.onUp(e, true));
     canvas.addEventListener('pointerleave', () => { this.hover = null; });
+    canvas.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
+    if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => this.resize()).observe(canvas.parentElement);
     this.resize();
   }
 
+  // ------------------------------------------------------------- sizing & camera
   resize() {
-    // measure the space inside the hedge-framed wrapper
-    const wrap = this.app.canvasWrap;
-    let w = LW * 2;
-    if (wrap && wrap.clientWidth) {
-      const cs = getComputedStyle(wrap);
-      w = wrap.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    const box = this.canvas.parentElement?.getBoundingClientRect();
+    if (!box || !box.width || !box.height) return;
+    this.vw = box.width;
+    this.vh = box.height;
+    this.dpr = Math.min(3, window.devicePixelRatio || 1);
+    this.canvas.width = Math.round(this.vw * this.dpr);
+    this.canvas.height = Math.round(this.vh * this.dpr);
+    this.canvas.style.width = this.vw + 'px';
+    this.canvas.style.height = this.vh + 'px';
+    const prevFit = this.fitZoom;
+    this.computeFit();
+    if (!this.fitted) this.fit(false);
+    else {
+      if (prevFit) this.cam.zoom *= this.fitZoom / prevFit;
+      this.clampCamera();
     }
-    this.scale = Math.max(1, Math.min(5, Math.floor(w / LW)));
-    // back the canvas at device resolution so the grass backdrop stays sharp;
-    // an integer multiple keeps the pixel art crisp
-    this.dpr = Math.max(1, Math.round(window.devicePixelRatio || 1));
-    this.canvas.width = LW * this.scale * this.dpr;
-    this.canvas.height = LH * this.scale * this.dpr;
-    this.canvas.style.width = LW * this.scale + 'px';
-    this.canvas.style.height = LH * this.scale + 'px';
-    this.terrainCache.key = null;
+  }
+
+  /** Screen insets kept clear for the hedges and overlay controls. */
+  insets() {
+    const cs = getComputedStyle(this.canvas.parentElement);
+    const hedge = parseFloat(cs.getPropertyValue('--hedge')) || 24;
+    return { side: hedge * 0.75, top: hedge * 0.6 + 48, bottom: hedge * 0.6 + 64 };
+  }
+
+  computeFit() {
+    const ins = this.insets();
+    const zw = (this.vw - 2 * ins.side) / LW;
+    const zh = (this.vh - ins.top - ins.bottom) / LH;
+    this.fitZoom = Math.max(0.5, Math.min(zw, zh));
+    this.minZoom = this.fitZoom;
+    this.maxZoom = this.fitZoom * ZOOM_RANGE;
+  }
+
+  /** Frame the whole area. */
+  fit(animate = true) {
+    const ins = this.insets();
+    const z = this.fitZoom;
+    const cx = LW / 2;
+    const cy = LH / 2 - (ins.top - ins.bottom) / (2 * z);
+    if (animate) this.cam.target = { x: cx, y: cy, zoom: z };
+    else Object.assign(this.cam, { x: cx, y: cy, zoom: z, target: null, vx: 0, vy: 0 });
+    this.fitted = true;
+  }
+
+  /** Glide so the area's centre sits in the space above a panel `px` CSS pixels tall. */
+  focusAbove(px) {
+    const z = this.cam.target ? this.cam.target.zoom : this.cam.zoom;
+    const ins = this.insets();
+    const freeTop = ins.top;
+    const freeBottom = Math.max(ins.bottom, px + 20);
+    const target = { x: LW / 2, y: LH / 2 - (freeTop - freeBottom) / (2 * z), zoom: z };
+    // fit the area into the free space if it does not fit at this zoom
+    const fitZ = Math.min((this.vw - 2 * ins.side) / LW, (this.vh - freeTop - freeBottom) / LH);
+    if (fitZ < z) { target.zoom = Math.max(this.minZoom * 0.75, fitZ); target.y = LH / 2 - (freeTop - freeBottom) / (2 * target.zoom); }
+    this.minZoom = Math.min(this.minZoom, target.zoom);
+    this.cam.target = target;
+  }
+
+  zoomBy(f) {
+    const t = this.cam.target;
+    const z = clamp((t ? t.zoom : this.cam.zoom) * f, this.minZoom, this.maxZoom);
+    this.cam.target = { x: t ? t.x : this.cam.x, y: t ? t.y : this.cam.y, zoom: z };
+  }
+
+  /** Zoom to z keeping the world point under screen point (sx, sy) fixed. */
+  zoomAt(sx, sy, z) {
+    z = clamp(z, this.minZoom, this.maxZoom);
+    const w = this.toWorld(sx, sy);
+    this.cam.zoom = z;
+    this.cam.x = w.x - (sx - this.vw / 2) / z;
+    this.cam.y = w.y - (sy - this.vh / 2) / z;
+    this.clampCamera();
+  }
+
+  clampCamera() {
+    const c = this.cam;
+    c.zoom = clamp(c.zoom, this.minZoom, this.maxZoom);
+    // the centre of the view may wander a little beyond the area, never far into the woods
+    c.x = clamp(c.x, -PAN_MARGIN, LW + PAN_MARGIN);
+    c.y = clamp(c.y, -PAN_MARGIN, LH + PAN_MARGIN);
+  }
+
+  toWorld(sx, sy) {
+    return { x: this.cam.x + (sx - this.vw / 2) / this.cam.zoom, y: this.cam.y + (sy - this.vh / 2) / this.cam.zoom };
+  }
+
+  local(e) {
+    const r = this.canvas.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
   }
 
   setArea(id) {
@@ -67,39 +164,107 @@ export class ForestView {
       this.areaId = id;
       this.agents.clear();
       this.popups = [];
+      this.fit(false);
     }
   }
 
-  toLogical(e) {
-    const rect = this.canvas.getBoundingClientRect();
-    return { x: ((e.clientX - rect.left) / rect.width) * LW, y: ((e.clientY - rect.top) / rect.height) * LH };
+  // ------------------------------------------------------------- input
+  onDown(e) {
+    this.canvas.setPointerCapture?.(e.pointerId);
+    const p = this.local(e);
+    this.pointers.set(e.pointerId, p);
+    this.cam.target = null;
+    this.cam.vx = 0;
+    this.cam.vy = 0;
+    if (this.pointers.size === 1) {
+      this.gesture = { kind: 'pan', start: p, last: p, lastT: performance.now(), moved: false };
+    } else if (this.pointers.size === 2) {
+      const [a, b] = [...this.pointers.values()];
+      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      this.gesture = { kind: 'pinch', dist: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)), zoom: this.cam.zoom, world: this.toWorld(mid.x, mid.y), moved: true };
+    }
   }
 
-  toTile(e) {
-    const p = this.toLogical(e);
-    return { x: Math.floor(p.x / TILE), y: Math.floor(p.y / TILE) };
+  onMove(e) {
+    const p = this.local(e);
+    if (e.pointerType === 'mouse' && !this.pointers.size) {
+      const w = this.toWorld(p.x, p.y);
+      this.hover = { x: Math.floor(w.x / TILE), y: Math.floor(w.y / TILE) };
+    }
+    if (!this.pointers.has(e.pointerId)) return;
+    this.pointers.set(e.pointerId, p);
+    const g = this.gesture;
+    if (!g) return;
+    if (g.kind === 'pan' && this.pointers.size === 1) {
+      if (!g.moved && Math.hypot(p.x - g.start.x, p.y - g.start.y) > TAP_SLOP) g.moved = true;
+      if (g.moved) {
+        const now = performance.now();
+        const dt = Math.max(1, now - g.lastT) / 1000;
+        const dx = (p.x - g.last.x) / this.cam.zoom;
+        const dy = (p.y - g.last.y) / this.cam.zoom;
+        this.cam.x -= dx;
+        this.cam.y -= dy;
+        // smoothed release velocity for a gentle glide after letting go
+        this.cam.vx = this.cam.vx * 0.6 + (-dx / dt) * 0.4;
+        this.cam.vy = this.cam.vy * 0.6 + (-dy / dt) * 0.4;
+        g.lastT = now;
+        this.clampCamera();
+      }
+      g.last = p;
+    } else if (g.kind === 'pinch' && this.pointers.size >= 2) {
+      const [a, b] = [...this.pointers.values()];
+      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      const z = clamp(g.zoom * (Math.hypot(a.x - b.x, a.y - b.y) / g.dist), this.minZoom, this.maxZoom);
+      this.cam.zoom = z;
+      this.cam.x = g.world.x - (mid.x - this.vw / 2) / z;
+      this.cam.y = g.world.y - (mid.y - this.vh / 2) / z;
+      this.clampCamera();
+    }
   }
 
-  onPointer(e) {
-    const p = this.toLogical(e);
-    const tile = { x: Math.floor(p.x / TILE), y: Math.floor(p.y / TILE) };
+  onUp(e, cancelled = false) {
+    const g = this.gesture;
+    const p = this.pointers.get(e.pointerId) || this.local(e);
+    this.pointers.delete(e.pointerId);
+    if (g?.kind === 'pan' && !g.moved && !cancelled) this.tap(p);
+    if (g?.kind === 'pan' && g.moved && performance.now() - g.lastT > 80) { this.cam.vx = 0; this.cam.vy = 0; }
+    if (this.pointers.size === 1) {
+      // pinch → continue panning with the remaining finger
+      const [q] = this.pointers.values();
+      this.gesture = { kind: 'pan', start: q, last: q, lastT: performance.now(), moved: true };
+      this.cam.vx = 0;
+      this.cam.vy = 0;
+    } else if (!this.pointers.size) this.gesture = null;
+  }
+
+  onWheel(e) {
+    e.preventDefault();
+    const p = this.local(e);
+    this.cam.target = null;
+    this.zoomAt(p.x, p.y, this.cam.zoom * Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)));
+  }
+
+  tap(p) {
+    const w = this.toWorld(p.x, p.y);
+    const tile = { x: Math.floor(w.x / TILE), y: Math.floor(w.y / TILE) };
+    const inArea = tile.x >= 0 && tile.y >= 0 && tile.x < AREA_W && tile.y < AREA_H;
     if (this.app.buildTool) {
-      this.app.onTapTile(this.areaId, tile.x, tile.y);
+      if (inArea) this.app.onTapTile(this.areaId, tile.x, tile.y);
       return;
     }
-    // mushrooms first (front-most = largest y)
-    const hits = [...this.agents.values()].filter((a) => p.x >= a.x - SPRITE_W / 2 && p.x <= a.x + SPRITE_W / 2 && p.y >= a.y - SPRITE_H && p.y <= a.y + 1);
+    const hits = [...this.agents.values()].filter((a) => w.x >= a.x - SPRITE_W / 2 && w.x <= a.x + SPRITE_W / 2 && w.y >= a.y - SPRITE_H && w.y <= a.y + 2);
     if (hits.length) {
       hits.sort((a, b) => b.y - a.y);
       this.app.onTapMushroom(hits[0].uid);
       return;
     }
+    if (!inArea) return;
     const area = this.app.state.world.areas[this.areaId];
     const obj = area?.objects.find((o) => o.x === tile.x && o.y === tile.y);
     if (obj) this.app.onTapObject(obj.id);
   }
 
-  // which mushrooms are shown here, and where they work
+  // ------------------------------------------------------------- mushrooms
   population() {
     const s = this.app.state;
     const out = [];
@@ -125,14 +290,14 @@ export class ForestView {
     const k = siblings.indexOf(m);
     const offsets = [[-6, 18], [22, 18], [8, 22]];
     const [ox, oy] = offsets[k % offsets.length];
-    return { x: Math.max(EDGE, Math.min(LW - EDGE, obj.x * TILE + ox)), y: Math.max(SPRITE_H + 6, Math.min(LH - 6, obj.y * TILE + oy)) };
+    return { x: clamp(obj.x * TILE + ox, EDGE, LW - EDGE), y: clamp(obj.y * TILE + oy, SPRITE_H, LH - 4) };
   }
 
   randomSpot() {
-    return { x: EDGE + this.rng.next() * (LW - 2 * EDGE), y: SPRITE_H + 6 + this.rng.next() * (LH - SPRITE_H - 12) };
+    return { x: EDGE + this.rng.next() * (LW - 2 * EDGE), y: SPRITE_H + this.rng.next() * (LH - SPRITE_H - 6) };
   }
 
-  syncAgents(t) {
+  syncAgents() {
     const pop = this.population();
     const seen = new Set();
     for (const { m, kind } of pop) {
@@ -140,7 +305,11 @@ export class ForestView {
       let a = this.agents.get(m.uid);
       if (!a) {
         const spot = kind === 'worker' ? this.workSpot(m) : this.randomSpot();
-        a = { uid: m.uid, x: spot.x, y: spot.y, target: null, mode: 'idle', wait: this.rng.next() * 2, lastCycles: m.work?.cycles ?? 0, carry: null, kind, flip: false };
+        a = {
+          uid: m.uid, x: spot.x, y: spot.y, vx: 0, vy: 0, target: null, mode: 'idle', wait: this.rng.next() * 2,
+          lastCycles: m.work?.cycles ?? 0, carry: null, kind, flip: false,
+          phase: this.rng.next() * 6, squash: 0, squashV: 0, seed: (hash(m.uid) % 1000) / 159,
+        };
         this.agents.set(m.uid, a);
       }
       a.m = m;
@@ -149,199 +318,299 @@ export class ForestView {
         const job = JOB_BY_ID[m.work.jobId];
         const spot = this.workSpot(m);
         if (m.work.cycles > a.lastCycles) {
-          // a cycle completed: pop-up and a short carrying walk
           const main = Object.keys(job.outputs)[0];
-          this.popups.push({ x: a.x, y: a.y - SPRITE_H - 2, color: resourceColor(main || 'glimmer'), life: 1.6, text: '+' });
+          this.popups.push({ x: a.x, y: a.y - SPRITE_H - 2, color: resourceColor(main || 'glimmer'), life: 1.6 });
           a.lastCycles = m.work.cycles;
+          a.squashV += 2.2; // a happy little hop of effort
           if (job.anim === 'carry' || job.anim === 'dig') {
             a.carry = resourceColor(main);
             const off = this.randomSpot();
-            a.target = { x: (spot.x * 2 + off.x) / 3, y: (spot.y * 2 + off.y) / 3 };
-            a.mode = 'walk';
+            this.walkTo(a, { x: (spot.x * 2 + off.x) / 3, y: (spot.y * 2 + off.y) / 3 });
             a.returnTo = spot;
           }
         }
         if (a.mode !== 'walk') {
-          const dx = spot.x - a.x;
-          const dy = spot.y - a.y;
-          if (Math.hypot(dx, dy) > 2) { a.target = spot; a.mode = 'walk'; } else {
+          if (Math.hypot(spot.x - a.x, spot.y - a.y) > 2) this.walkTo(a, spot);
+          else {
             const cond = this.app.conditions;
             a.mode = job.phases && !job.phases.includes(cond.phase) ? 'sleep' : 'work';
             a.anim = job.anim;
           }
         }
-      } else if (a.mode === 'idle' || a.mode === 'work' || a.mode === 'sleep') {
-        a.wait -= 1 / 30;
-        if (a.wait <= 0) { a.target = this.randomSpot(); a.mode = 'walk'; }
-        else a.mode = 'idle';
+      } else if (a.mode !== 'walk') {
+        a.mode = 'idle';
       }
     }
     for (const uid of [...this.agents.keys()]) if (!seen.has(uid)) this.agents.delete(uid);
-    void t;
+  }
+
+  walkTo(a, target) {
+    if (a.mode !== 'walk') a.squashV -= 1.4; // crouch before setting off
+    a.target = target;
+    a.mode = 'walk';
   }
 
   step(dt) {
+    // camera: eased zoom/pan targets and post-drag glide
+    const c = this.cam;
+    if (c.target) {
+      const k = 1 - Math.exp(-dt * 10);
+      c.x += (c.target.x - c.x) * k;
+      c.y += (c.target.y - c.y) * k;
+      c.zoom += (c.target.zoom - c.zoom) * k;
+      if (Math.abs(c.target.zoom - c.zoom) < 0.002 && Math.hypot(c.target.x - c.x, c.target.y - c.y) < 0.05) {
+        Object.assign(c, { x: c.target.x, y: c.target.y, zoom: c.target.zoom });
+        c.target = null;
+      }
+      this.clampCamera();
+    } else if (!this.pointers.size && (Math.abs(c.vx) > 0.5 || Math.abs(c.vy) > 0.5)) {
+      c.x += c.vx * dt;
+      c.y += c.vy * dt;
+      const decay = Math.exp(-dt * 5);
+      c.vx *= decay;
+      c.vy *= decay;
+      this.clampCamera();
+    }
+
     for (const a of this.agents.values()) {
+      // idle mushrooms occasionally wander
+      if (a.mode === 'idle' && (a.kind !== 'worker')) {
+        a.wait -= dt;
+        if (a.wait <= 0) this.walkTo(a, this.randomSpot());
+      }
+      // steering: accelerate toward the target, ease in on arrival
+      let desiredX = 0;
+      let desiredY = 0;
       if (a.mode === 'walk' && a.target) {
         const dx = a.target.x - a.x;
         const dy = a.target.y - a.y;
         const d = Math.hypot(dx, dy);
-        if (d < 1) {
-          a.x = a.target.x; a.y = a.target.y;
-          if (a.returnTo) { a.target = a.returnTo; a.returnTo = null; a.carry = null; } else {
+        if (d < 0.4 && Math.hypot(a.vx, a.vy) < 2) {
+          a.x = a.target.x;
+          a.y = a.target.y;
+          a.vx = 0;
+          a.vy = 0;
+          a.squashV -= 1.8; // settle with a squish
+          if (a.returnTo) { this.walkTo(a, a.returnTo); a.returnTo = null; a.carry = null; } else {
             a.target = null;
             a.mode = 'idle';
-            a.wait = 1 + this.rng.next() * 4;
+            a.wait = 1.5 + this.rng.next() * 4;
           }
         } else {
-          a.x += (dx / d) * SPEED * dt;
-          a.y += (dy / d) * SPEED * dt;
-          a.flip = dx < 0;
+          const sp = MAX_SPEED * Math.min(1, d / SLOW_RADIUS);
+          desiredX = (dx / d) * sp;
+          desiredY = (dy / d) * sp;
         }
       }
+      const k = 1 - Math.exp(-dt * ACCEL);
+      a.vx += (desiredX - a.vx) * k;
+      a.vy += (desiredY - a.vy) * k;
+      a.x += a.vx * dt;
+      a.y += a.vy * dt;
+      const speed = Math.hypot(a.vx, a.vy);
+      if (Math.abs(a.vx) > 1.5) a.flip = a.vx < 0;
+      // squash-and-stretch: a damped spring plus a gliding wobble while moving
+      a.squashV += (-90 * a.squash - 9 * a.squashV) * dt;
+      a.squash += a.squashV * dt;
+      a.phase += dt * (2 + speed * 0.55);
+      a.speed = speed;
     }
     this.popups = this.popups.filter((p) => (p.life -= dt) > 0);
-    this.fx = this.fx.filter((p) => (p.life -= dt) > 0);
+  }
+
+  /** Vertical scale for a mushroom right now (horizontal is its inverse). */
+  squishOf(a, t, rm) {
+    if (rm) return 1;
+    let s = 1 + a.squash * 0.09;
+    const move = Math.min(1, (a.speed || 0) / MAX_SPEED);
+    s += Math.sin(a.phase * 2.2) * 0.075 * move; // rhythmic squish as it glides
+    if (a.mode === 'work') s -= Math.max(0, Math.sin(t * 5.5 + a.seed)) * 0.07;
+    else if (a.mode === 'sleep') s += Math.sin(t * 1.2 + a.seed) * 0.035;
+    else if (move < 0.05) s += Math.sin(t * 2 + a.seed) * 0.018; // breathing
+    return clamp(s, 0.8, 1.2);
+  }
+
+  // ------------------------------------------------------------- drawing
+  decorFor(areaId) {
+    if (this.decor.has(areaId)) return this.decor.get(areaId);
+    const rng = makeRng(hash('decor', areaId));
+    const small = ['bush', 'fern', 'flowers', 'stones', 'log', 'fern', 'flowers'];
+    const out = [];
+    const R = 260; // the woods extend this far past the area
+    for (let i = 0; out.length < 230 && i < 3000; i++) {
+      const x = -R + rng.next() * (LW + 2 * R);
+      const y = -R + rng.next() * (LH + 2 * R);
+      // keep the area itself clear, with a little breathing room around it
+      if (x > -TILE * 1.5 && x < LW + 4 && y > -TILE * 2 && y < LH + 4) continue;
+      // trees thicken with distance from the clearing
+      const dist = Math.max(-x, x - LW, -y, y - LH, 0);
+      const treeChance = Math.min(0.75, 0.15 + dist / 140);
+      const kind = rng.chance(treeChance) ? (rng.chance(0.5) ? 'tree' : 'pine') : rng.pick(small);
+      out.push({ x: Math.round(x), y: Math.round(y), kind });
+    }
+    this.decor.set(areaId, out);
+    return out;
   }
 
   draw(t) {
     const s = this.app.state;
     const ctx = this.ctx;
     const area = s.world.areas[this.areaId];
-    if (!area) return;
+    if (!area || !this.vw) return;
     const rm = s.settings.reducedMotion;
-    const k = this.scale * (this.dpr || 1);
-    const backdrop = this.grass.complete && this.grass.naturalWidth > 0;
-    // 1. painted grass backdrop at full device resolution (cover-fit)
-    if (backdrop) {
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.imageSmoothingEnabled = true;
+    const c = this.cam;
+    const k = c.zoom * this.dpr;
+    const ox = (this.vw / 2 - c.x * c.zoom) * this.dpr;
+    const oy = (this.vh / 2 - c.y * c.zoom) * this.dpr;
+    const view = { x0: c.x - this.vw / (2 * c.zoom), y0: c.y - this.vh / (2 * c.zoom), w: this.vw / c.zoom, h: this.vh / c.zoom };
+
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = '#4f7a38';
+    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    ctx.setTransform(k, 0, 0, k, ox, oy);
+
+    // 1. grass everywhere in view (smooth when shrinking the painting, crisp when enlarging it)
+    if (this.grassTile) {
+      const gt = this.grassTile;
+      const tw = GRASS_TILE * 2;
+      const th = tw * (gt.height / gt.width);
+      ctx.imageSmoothingEnabled = k * (GRASS_TILE / this.grass.naturalWidth) < 1.2;
       ctx.imageSmoothingQuality = 'high';
-      const cw = this.canvas.width;
-      const ch = this.canvas.height;
-      const gw = this.grass.naturalWidth;
-      const gh = this.grass.naturalHeight;
-      const sc = Math.max(cw / gw, ch / gh);
-      const sw = cw / sc;
-      const sh = ch / sc;
-      ctx.drawImage(this.grass, (gw - sw) / 2, (gh - sh) / 2, sw, sh, 0, 0, cw, ch);
+      for (let gy = Math.floor(view.y0 / th) * th; gy < view.y0 + view.h; gy += th) {
+        for (let gx = Math.floor(view.x0 / tw) * tw; gx < view.x0 + view.w; gx += tw) ctx.drawImage(gt, gx, gy, tw + 0.5 / k, th + 0.5 / k);
+      }
     }
-    ctx.setTransform(k, 0, 0, k, 0, 0);
     ctx.imageSmoothingEnabled = false;
-    // 2. terrain features on top (grass tiles stay transparent; cached; water animates at 2 fps)
-    const tkey = this.areaId + area.tiles.join('') + (rm ? 0 : Math.floor(t * 2)) + backdrop;
+
+    // 2. terrain features (grass tiles transparent; cached; water animates at 2 fps)
+    const tkey = this.areaId + area.tiles.join('') + (rm ? 0 : Math.floor(t * 2));
     if (this.terrainCache.key !== tkey) {
       const tctx = this.terrainCache.canvas.getContext('2d');
       tctx.clearRect(0, 0, LW, LH);
-      for (let y = 0; y < AREA_H; y++) for (let x = 0; x < AREA_W; x++) drawTile(tctx, area.tiles[y][x], x, y, rm ? 0 : t, 0, backdrop);
+      for (let y = 0; y < AREA_H; y++) for (let x = 0; x < AREA_W; x++) drawTile(tctx, area.tiles[y][x], x, y, rm ? 0 : t, 0, true);
       this.terrainCache.key = tkey;
     }
     ctx.drawImage(this.terrainCache.canvas, 0, 0);
 
-    // depth-sorted drawables
+    // 3. depth-sorted: forest beyond the area, structures, mushrooms
     const items = [];
+    for (const d of this.decorFor(this.areaId)) {
+      if (d.x < view.x0 - TILE || d.x > view.x0 + view.w || d.y < view.y0 - TILE || d.y > view.y0 + view.h) continue;
+      items.push({ y: d.y + TILE, draw: () => drawArt(ctx, d.kind, d.x, d.y, rm ? 0 : t) });
+    }
     for (const o of area.objects) items.push({ y: o.y * TILE + TILE, draw: () => drawStructure(ctx, STRUCTURES[o.def], o.x, o.y, o.state, rm ? 0 : t) });
     for (const a of this.agents.values()) items.push({ y: a.y, draw: () => this.drawAgent(ctx, a, t, rm) });
     items.sort((p, q) => p.y - q.y);
     for (const it of items) it.draw();
 
-    // build overlay
+    // 4. build overlay
     if (this.app.buildTool) {
-      ctx.strokeStyle = 'rgba(255,255,255,0.18)';
-      ctx.lineWidth = 1 / k;
+      ctx.strokeStyle = 'rgba(255,255,255,0.22)';
+      ctx.lineWidth = 1 / c.zoom;
       for (let x = 0; x <= AREA_W; x++) { ctx.beginPath(); ctx.moveTo(x * TILE, 0); ctx.lineTo(x * TILE, LH); ctx.stroke(); }
       for (let y = 0; y <= AREA_H; y++) { ctx.beginPath(); ctx.moveTo(0, y * TILE); ctx.lineTo(LW, y * TILE); ctx.stroke(); }
-      if (this.hover) {
+      ctx.lineWidth = 2 / c.zoom;
+      if (this.hover && this.hover.x >= 0 && this.hover.y >= 0 && this.hover.x < AREA_W && this.hover.y < AREA_H) {
         ctx.strokeStyle = '#ffd75e';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(this.hover.x * TILE + 0.5, this.hover.y * TILE + 0.5, TILE - 1, TILE - 1);
+        ctx.strokeRect(this.hover.x * TILE, this.hover.y * TILE, TILE, TILE);
       }
       if (this.app.buildTool.kind === 'move') {
         const o = area.objects.find((x) => x.id === this.app.buildTool.objectId);
-        if (o) { ctx.strokeStyle = '#8fd8ff'; ctx.strokeRect(o.x * TILE + 0.5, o.y * TILE + 0.5, TILE - 1, TILE - 1); }
+        if (o) { ctx.strokeStyle = '#8fd8ff'; ctx.strokeRect(o.x * TILE, o.y * TILE, TILE, TILE); }
       }
     }
 
-    // pop-ups
+    // 5. pop-ups
     for (const p of this.popups) {
       const yy = p.y - (1.6 - p.life) * 8;
       ctx.globalAlpha = Math.min(1, p.life);
       ctx.fillStyle = '#2a1a10';
-      ctx.fillRect(Math.round(p.x) - 4, Math.round(yy) - 1, 9, 6);
+      ctx.fillRect(p.x - 4, yy - 1, 9, 6);
       ctx.fillStyle = p.color;
-      ctx.fillRect(Math.round(p.x) + 1, Math.round(yy), 3, 3);
+      ctx.fillRect(p.x + 1, yy, 3, 3);
       ctx.fillStyle = '#fff';
-      ctx.fillRect(Math.round(p.x) - 3, Math.round(yy) + 1, 3, 1);
-      ctx.fillRect(Math.round(p.x) - 2, Math.round(yy), 1, 3);
+      ctx.fillRect(p.x - 3, yy + 1, 3, 1);
+      ctx.fillRect(p.x - 2, yy, 1, 3);
       ctx.globalAlpha = 1;
     }
 
-    // time of day and weather
+    // 6. time of day and weather, across the whole screen
     const cond = this.app.conditions;
-    const tint = { dawn: 'rgba(255,170,90,0.13)', day: null, dusk: 'rgba(120,60,140,0.2)', night: 'rgba(16,20,60,0.42)' }[cond.phase];
-    if (tint) { ctx.fillStyle = tint; ctx.fillRect(0, 0, LW, LH); }
     if (cond.phase === 'night' || cond.phase === 'dusk') {
-      for (let i = 0; i < 9; i++) {
-        const fx = (i * 37 + (rm ? 0 : Math.sin(t * 0.5 + i) * 10)) % LW;
-        const fy = 20 + ((i * 53) % (LH - 30)) + (rm ? 0 : Math.cos(t * 0.7 + i * 2) * 6);
-        const on = rm || Math.sin(t * 2 + i * 1.7) > 0.2;
-        if (on) { ctx.fillStyle = 'rgba(230,255,140,0.9)'; ctx.fillRect(Math.round(fx), Math.round(fy), 1, 1); }
+      for (let i = 0; i < 26; i++) {
+        const fx = -40 + ((i * 37) % (LW + 80)) + (rm ? 0 : Math.sin(t * 0.5 + i) * 10);
+        const fy = -30 + ((i * 53) % (LH + 60)) + (rm ? 0 : Math.cos(t * 0.7 + i * 2) * 6);
+        if (rm || Math.sin(t * 2 + i * 1.7) > 0.2) { ctx.fillStyle = 'rgba(230,255,140,0.9)'; ctx.fillRect(fx, fy, 1, 1); }
       }
     }
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    const W = this.canvas.width;
+    const H = this.canvas.height;
+    const tint = { dawn: 'rgba(255,170,90,0.13)', day: null, dusk: 'rgba(120,60,140,0.2)', night: 'rgba(16,20,60,0.42)' }[cond.phase];
+    if (tint) { ctx.fillStyle = tint; ctx.fillRect(0, 0, W, H); }
     if (cond.raining) {
       ctx.fillStyle = 'rgba(30,40,70,0.15)';
-      ctx.fillRect(0, 0, LW, LH);
-      ctx.fillStyle = 'rgba(190,210,255,0.55)';
-      for (let i = 0; i < 60; i++) {
-        const rx = (i * 29 + (rm ? 0 : t * 30)) % (LW + 20) - 10;
-        const ry = (i * 47 + (rm ? 0 : t * 120)) % LH;
-        ctx.fillRect(Math.round(rx), Math.round(ry), 1, 3);
+      ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = 'rgba(190,210,255,0.5)';
+      const d = this.dpr;
+      for (let i = 0; i < 120; i++) {
+        const rx = ((i * 97 + (rm ? 0 : t * 60)) % (this.vw + 40)) - 20;
+        const ry = ((i * 151 + (rm ? 0 : t * 260)) % (this.vh + 20)) - 10;
+        ctx.fillRect(rx * d, ry * d, 1.5 * d, 7 * d);
       }
     }
   }
 
   drawAgent(ctx, a, t, rm) {
     const m = a.m;
-    let bob = 0;
-    if (a.mode === 'walk') bob = Math.abs(Math.sin(t * 9 + a.x)) * -1.5;
-    if (a.mode === 'work') bob = Math.sin(t * 6 + a.x) > 0.6 ? -1 : 0;
     const mv = this.app.state.unlocks.mutations && m.mutation ? MUTATION_BY_ID[m.mutation.mutationId]?.visual : null;
-    const x = a.x - SPRITE_W / 2;
-    const y = a.y - SPRITE_H;
-    if (a.flip) {
-      ctx.save();
-      ctx.translate(Math.round(a.x) * 2, 0);
-      ctx.scale(-1, 1);
-      drawMushroom(ctx, m, x, y, t, { bob, mutationVisual: mv, reducedMotion: rm });
-      ctx.restore();
-    } else drawMushroom(ctx, m, x, y, t, { bob, mutationVisual: mv, reducedMotion: rm });
-    // carried item
-    if (a.carry) { ctx.fillStyle = '#2a1a10'; ctx.fillRect(Math.round(a.x) - 2, Math.round(y) - 4, 5, 5); ctx.fillStyle = a.carry; ctx.fillRect(Math.round(a.x) - 1, Math.round(y) - 3, 3, 3); }
-    // work effects
+    const sy = this.squishOf(a, t, rm);
+    const sx = 1 / Math.sqrt(sy) * (sy < 1 ? 1 + (1 - sy) * 0.6 : 1);
+    drawMushroom(ctx, m, a.x - SPRITE_W / 2, a.y - SPRITE_H, t, { smooth: true, squish: { sx, sy }, flip: a.flip, mutationVisual: mv, reducedMotion: rm });
+    const top = a.y - SPRITE_H * sy;
+    if (a.carry) { ctx.fillStyle = '#2a1a10'; ctx.fillRect(a.x - 2.5, top - 5, 5, 5); ctx.fillStyle = a.carry; ctx.fillRect(a.x - 1.5, top - 4, 3, 3); }
     if (a.mode === 'work' && !rm) {
-      const c = ANIM_FX[a.anim] || '#fff';
-      const ph = (t * 1.5 + a.x * 0.1) % 1;
-      ctx.fillStyle = c;
-      if (a.anim === 'water') { ctx.fillRect(Math.round(a.x) + 9, Math.round(a.y - 14 + ph * 10), 1, 2); }
-      else if (a.anim === 'spores') { ctx.globalAlpha = 1 - ph; ctx.fillRect(Math.round(a.x - 6 + ph * 12), Math.round(a.y - 20 - ph * 8), 1, 1); ctx.fillRect(Math.round(a.x + 4 - ph * 8), Math.round(a.y - 16 - ph * 6), 1, 1); ctx.globalAlpha = 1; }
-      else if (a.anim === 'hammer') { if (ph < 0.2) { ctx.fillRect(Math.round(a.x) + 10, Math.round(a.y) - 12, 2, 1); ctx.fillRect(Math.round(a.x) + 12, Math.round(a.y) - 14, 1, 1); } }
-      else if (a.anim === 'dig') { ctx.fillRect(Math.round(a.x + 8 + ph * 4), Math.round(a.y - 4 - Math.sin(ph * 3) * 6), 1, 1); }
-      else if (a.anim === 'glow') { ctx.globalAlpha = 0.5 + 0.5 * Math.sin(t * 4); ctx.fillRect(Math.round(a.x) - 9, Math.round(a.y) - 22, 1, 1); ctx.fillRect(Math.round(a.x) + 9, Math.round(a.y) - 18, 1, 1); ctx.globalAlpha = 1; }
-      else if (a.anim === 'tend') { if (ph < 0.5) ctx.fillRect(Math.round(a.x) + 8, Math.round(a.y) - 26 + Math.round(ph * 4), 2, 2); }
+      const col = ANIM_FX[a.anim] || '#fff';
+      const ph = (t * 1.5 + a.seed) % 1;
+      ctx.fillStyle = col;
+      if (a.anim === 'water') ctx.fillRect(a.x + 9, a.y - 14 + ph * 10, 1, 2);
+      else if (a.anim === 'spores') { ctx.globalAlpha = 1 - ph; ctx.fillRect(a.x - 6 + ph * 12, a.y - 20 - ph * 8, 1, 1); ctx.fillRect(a.x + 4 - ph * 8, a.y - 16 - ph * 6, 1, 1); ctx.globalAlpha = 1; }
+      else if (a.anim === 'hammer') { if (ph < 0.2) { ctx.fillRect(a.x + 10, a.y - 12, 2, 1); ctx.fillRect(a.x + 12, a.y - 14, 1, 1); } }
+      else if (a.anim === 'dig') ctx.fillRect(a.x + 8 + ph * 4, a.y - 4 - Math.sin(ph * 3) * 6, 1, 1);
+      else if (a.anim === 'glow') { ctx.globalAlpha = 0.5 + 0.5 * Math.sin(t * 4); ctx.fillRect(a.x - 9, a.y - 22, 1, 1); ctx.fillRect(a.x + 9, a.y - 18, 1, 1); ctx.globalAlpha = 1; }
+      else if (a.anim === 'tend') { if (ph < 0.5) ctx.fillRect(a.x + 8, a.y - 26 + ph * 4, 2, 2); }
     }
     if (a.mode === 'sleep') {
       ctx.fillStyle = '#e0e8ff';
       const z = rm ? 0 : (t % 2);
-      ctx.fillRect(Math.round(a.x) + 8, Math.round(a.y - 30 - z * 2), 3, 1);
-      ctx.fillRect(Math.round(a.x) + 10, Math.round(a.y - 29 - z * 2), 1, 1);
-      ctx.fillRect(Math.round(a.x) + 8, Math.round(a.y - 28 - z * 2), 3, 1);
+      ctx.fillRect(a.x + 8, top - 2 - z * 2, 3, 1);
+      ctx.fillRect(a.x + 10, top - 1 - z * 2, 1, 1);
+      ctx.fillRect(a.x + 8, top - z * 2, 3, 1);
     }
-    // guest / visitor markers
     if (a.kind === 'guest' || a.kind === 'wild') {
       ctx.fillStyle = a.kind === 'guest' ? '#8fd8ff' : '#9ae07a';
-      ctx.fillRect(Math.round(a.x) - 1, Math.round(y) - 6 + (rm ? 0 : Math.round(Math.sin(t * 3))), 3, 3);
+      ctx.fillRect(a.x - 1.5, top - 6 + (rm ? 0 : Math.sin(t * 3)), 3, 3);
     }
   }
+}
+
+function clamp(v, lo, hi) {
+  return Math.max(lo, Math.min(hi, v));
+}
+
+/** 2×2 mirrored copy of an image: tiles seamlessly. */
+function mirrorTile(img) {
+  const w = img.naturalWidth;
+  const h = img.naturalHeight;
+  const c = document.createElement('canvas');
+  c.width = w * 2;
+  c.height = h * 2;
+  const x = c.getContext('2d');
+  x.drawImage(img, 0, 0);
+  x.save(); x.translate(w * 2, 0); x.scale(-1, 1); x.drawImage(img, 0, 0); x.restore();
+  x.save(); x.translate(0, h * 2); x.scale(1, -1); x.drawImage(img, 0, 0); x.restore();
+  x.save(); x.translate(w * 2, h * 2); x.scale(-1, -1); x.drawImage(img, 0, 0); x.restore();
+  return c;
 }
 
 export { conditionsAt };

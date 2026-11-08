@@ -31,34 +31,34 @@
 html, body { margin: 0; background: var(--bg); color: var(--text); }
 button, input, select, textarea { font-family: inherit; }
 body { min-height: 100vh; -webkit-tap-highlight-color: transparent; }
-#app { max-width: 760px; margin: 0 auto; min-height: 100vh; display: flex; flex-direction: column; }
+#app { --hedge: 24px; height: 100vh; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+@media (min-width: 640px) { #app { --hedge: 34px; } }
+.stage { position: relative; flex: 1; min-height: 0; }
+.screen-hedge { position: absolute; top: 0; bottom: 0; width: var(--hedge); z-index: 4; pointer-events: none; filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.45)); }
+.screen-hedge.left { left: calc(var(--hedge) * -0.3); background: url("assets/art/hedge-strip-v.webp") center top / 100% auto round; }
+.screen-hedge.right { right: calc(var(--hedge) * -0.3); background: url("assets/art/hedge-strip-r.webp") center top / 100% auto round; }
+.screen-inner { max-width: 760px; margin: 0 auto; }
 .boot { padding: 40px 16px; text-align: center; color: var(--muted); }
 
 /* top bar */
-.topbar { position: sticky; top: 0; z-index: 5; display: flex; justify-content: space-between; align-items: center; gap: 8px;
+.topbar { position: relative; z-index: 5; display: flex; justify-content: space-between; align-items: center; gap: 8px;
   padding: calc(8px + env(safe-area-inset-top, 0px)) 16px 8px; background: rgba(27, 36, 25, 0.96); border-bottom: 1px solid var(--line); }
 .brand { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .brand-mark { font-size: 22px; }
 .forest-name { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .top-stats { display: flex; gap: 6px; flex-shrink: 0; }
-.topbar::after, .bottomnav::before { content: ""; position: absolute; left: 0; right: 0; height: 22px; pointer-events: none;
+.topbar::after, .bottomnav::before { content: ""; position: absolute; left: 0; right: 0; height: var(--hedge); pointer-events: none;
   background: url("assets/art/hedge-strip.webp") left center / auto 100% round; filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.4)); }
-.topbar::after { bottom: -15px; }
-.bottomnav::before { top: -14px; }
-/* wide screens: hedges run down both sides of the game column */
-@media (min-width: 860px) {
-  #app { position: relative; }
-  #app::before, #app::after { content: ""; position: fixed; top: 0; bottom: 0; width: 44px; pointer-events: none; z-index: 7; }
-  #app::before { left: calc(50% - 380px - 34px); background: url("assets/art/hedge-strip-v.webp") center top / 100% auto round; }
-  #app::after { right: calc(50% - 380px - 34px); background: url("assets/art/hedge-strip-r.webp") center top / 100% auto round; }
-  .bottomnav::before { left: calc(50% - 380px); right: calc(50% - 380px); }
-}
+.topbar::after { bottom: calc(var(--hedge) * -0.65); }
+.bottomnav::before { top: calc(var(--hedge) * -0.6); }
+
 .pill { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 999px; background: var(--card); font-size: 13.5px; white-space: nowrap; }
 .pill.glimmer b { color: var(--accent); }
 
 /* main + nav */
-.screen { flex: 1; padding: 22px 16px calc(var(--nav-h) + var(--safe-b) + 24px); }
-.bottomnav { position: fixed; bottom: 0; left: 0; right: 0; z-index: 6; display: flex; justify-content: center;
+.screen { position: absolute; inset: 0; overflow-y: auto; padding: calc(var(--hedge) + 6px) calc(var(--hedge) * 0.7 + 10px) calc(var(--hedge) + 16px); }
+.screen.forest-mode { padding: 0; overflow: hidden; }
+.bottomnav { position: relative; z-index: 6; flex-shrink: 0; display: flex; justify-content: center;
   background: #172015; border-top: 1px solid var(--line); padding-bottom: var(--safe-b); }
 .nav-btn { flex: 1; max-width: 127px; height: var(--nav-h); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
   background: none; border: 0; color: var(--muted); font-size: 9px; cursor: pointer; position: relative; }
@@ -111,20 +111,31 @@ p { line-height: 1.45; margin: 6px 0; }
 .tab.active { background: var(--accent); color: #2a2210; border-color: var(--accent); font-weight: 700; }
 
 /* forest */
-/* Forest scene framed by the shrubbery border. --hedge is the hedge thickness;
-   the hedges overlap the scene's edge by about half of it. */
-.forest-canvas-wrap { --hedge: 30px; width: 100%; display: flex; justify-content: center; padding: calc(var(--hedge) * 0.5); margin: 0 0 6px; }
-.hedge-frame { position: relative; display: inline-block; line-height: 0; }
-.forest-canvas { image-rendering: pixelated; image-rendering: crisp-edges; touch-action: manipulation; max-width: 100%; display: block; background: #4f7a38; }
-.hedge { position: absolute; pointer-events: none; z-index: 1; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.45)); }
-.hedge.top, .hedge.bottom { left: calc(var(--hedge) * -0.5); right: calc(var(--hedge) * -0.5); height: var(--hedge);
-  background: url("assets/art/hedge-strip.webp") left center / auto 100% round; }
-.hedge.top { top: calc(var(--hedge) * -0.55); }
-.hedge.bottom { bottom: calc(var(--hedge) * -0.45); z-index: 2; }
-.hedge.left, .hedge.right { top: calc(var(--hedge) * -0.3); bottom: calc(var(--hedge) * -0.3); width: var(--hedge); }
-.hedge.left { left: calc(var(--hedge) * -0.55); background: url("assets/art/hedge-strip-v.webp") center top / 100% auto round; }
-.hedge.right { right: calc(var(--hedge) * -0.55); background: url("assets/art/hedge-strip-r.webp") center top / 100% auto round; }
-@media (min-width: 640px) { .forest-canvas-wrap { --hedge: 40px; } }
+/* Full-screen forest view with floating controls */
+.forest-view { position: absolute; inset: 0; overflow: hidden; background: #4f7a38; }
+.forest-canvas { position: absolute; inset: 0; display: block; image-rendering: pixelated; image-rendering: crisp-edges; touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; }
+.forest-canvas:active { cursor: grabbing; }
+.fv-overlay { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
+.fv-overlay > * { pointer-events: auto; }
+.fv-top { position: absolute; top: calc(var(--hedge) * 0.7 + 4px); left: calc(var(--hedge) * 0.8); right: calc(var(--hedge) * 0.8); pointer-events: none; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.fv-top > * { pointer-events: auto; }
+.fv-tabs { margin: 0; max-width: 100%; }
+.fv-tabs .tab { background: rgba(27, 36, 25, 0.85); backdrop-filter: blur(2px); }
+.fv-tabs .tab.active { background: var(--accent); }
+.fv-pill { border: 1px solid var(--line); background: rgba(27, 36, 25, 0.85); color: var(--text); border-radius: 999px; padding: 6px 12px; font: inherit; cursor: pointer; }
+.fv-btn { min-width: 44px; min-height: 44px; border-radius: 12px; border: 1px solid #11180f; background: rgba(43, 56, 39, 0.92); color: var(--text); font: inherit; font-size: 18px; cursor: pointer; position: relative; box-shadow: 0 3px 8px rgba(0, 0, 0, 0.35); }
+.fv-btn.wide { font-size: 13.5px; font-weight: 700; padding: 0 14px; }
+.fv-btn:hover { border-color: var(--accent); }
+.fv-badge { position: absolute; top: -6px; right: -6px; background: var(--accent2); color: #fff; border-radius: 999px; font-size: 9px; padding: 3px 6px; }
+.fv-zoom .fv-btn { font-size: 27px; line-height: 1; }
+.fv-zoom { position: absolute; right: calc(var(--hedge) * 0.8); bottom: calc(var(--hedge) * 0.7 + 8px); display: flex; flex-direction: column; gap: 6px; }
+.fv-actions { position: absolute; left: calc(var(--hedge) * 0.8); bottom: calc(var(--hedge) * 0.7 + 8px); display: flex; gap: 8px; }
+.fv-overlay .build-bar { position: absolute; left: calc(var(--hedge) * 0.8); right: calc(var(--hedge) * 0.8 + 56px); bottom: calc(var(--hedge) * 0.7 + 8px); margin: 0; max-height: 44%; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px;
+  background: rgba(35, 47, 32, 0.95); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45); }
+.fv-overlay .build-list { display: flex; overflow-x: auto; gap: 8px; scrollbar-width: thin; }
+.fv-overlay .build-item { flex: 0 0 138px; padding: 6px; gap: 2px; }
+.fv-overlay .build-bar .hint { margin: 0; order: -1; }
+.fv-overlay .build-bar .btn.small { min-height: 34px; }
 .build-bar { padding: 10px; }
 .build-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin-top: 10px; }
 .build-item { text-align: left; display: flex; flex-direction: column; gap: 4px; padding: 8px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg2); color: var(--text); font: inherit; cursor: pointer; }
@@ -268,7 +279,7 @@ textarea.code { font-family: "Pixeloid Mono", ui-monospace, monospace; font-size
   .modal-backdrop { align-items: center; padding: 24px; }
   .modal { border-radius: 18px; }
 }
-.toast-root { position: fixed; left: 0; right: 0; bottom: calc(var(--nav-h) + var(--safe-b) + 10px); z-index: 30; display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; padding: 0 16px; }
+.toast-root { position: fixed; left: 0; right: 0; bottom: calc(var(--nav-h) + var(--safe-b) + 84px); z-index: 30; display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; padding: 0 16px; }
 .toast { background: #2f3d2a; border: 1px solid #5b8a3c; padding: 10px 14px; border-radius: 10px; max-width: 100%; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4); transition: opacity 0.5s, transform 0.5s; }
 .toast.error { background: #4a2420; border-color: #a0443a; }
 .toast.out { opacity: 0; transform: translateY(8px); }

@@ -57,7 +57,6 @@ export class App {
     this.save(true);
 
     setInterval(() => this.tick(), 1000);
-    window.addEventListener('resize', () => this.forest.resize());
     document.addEventListener('visibilitychange', () => { if (document.hidden) this.save(true); else this.tick(); });
     window.addEventListener('pagehide', () => this.save(true));
     let last = performance.now();
@@ -131,14 +130,17 @@ export class App {
     this.root.innerHTML = '';
     this.header = h('header', { class: 'topbar' });
     this.main = h('main', { class: 'screen' });
-    this.canvasWrap = h('div', { class: 'forest-canvas-wrap' });
-    this.canvas = h('canvas', { class: 'forest-canvas', 'aria-label': 'Forest scene. Tap a mushroom or structure.' });
-    this.canvasWrap.appendChild(h('div', { class: 'hedge-frame' }, this.canvas,
-      ['top', 'bottom', 'left', 'right'].map((side) => h('div', { class: `hedge ${side}`, 'aria-hidden': 'true' }))));
+    // the forest view: full-screen canvas plus an overlay layer for its controls
+    this.canvas = h('canvas', { class: 'forest-canvas', 'aria-label': 'Forest scene. Drag to look around, pinch or scroll to zoom, tap a mushroom or structure.' });
+    this.forestOverlay = h('div', { class: 'fv-overlay' });
+    this.canvasWrap = h('div', { class: 'forest-view' }, this.canvas, this.forestOverlay);
+    // hedges mark the borders of the screen (top and bottom hedges hang off the menus)
+    this.stage = h('div', { class: 'stage' }, this.main,
+      h('div', { class: 'screen-hedge left', 'aria-hidden': 'true' }), h('div', { class: 'screen-hedge right', 'aria-hidden': 'true' }));
     this.nav = h('nav', { class: 'bottomnav' }, NAV.map((n) => h('button', { type: 'button', class: 'nav-btn', dataset: { id: n.id }, onclick: () => this.go(n.id) }, h('span', { class: 'nav-icon', 'aria-hidden': 'true' }, n.icon), h('span', {}, n.label))));
     this.modalRoot = h('div', { class: 'modal-root' });
     this.toastRoot = h('div', { class: 'toast-root', 'aria-live': 'polite' });
-    this.root.append(this.header, this.main, this.nav, this.modalRoot, this.toastRoot);
+    this.root.append(this.header, this.stage, this.nav, this.modalRoot, this.toastRoot);
   }
 
   go(screen) {
@@ -180,9 +182,11 @@ export class App {
       case 'more': node = renderMore(this); break;
       default: node = renderForest(this);
     }
-    this.main.replaceChildren(node);
+    const forest = this.screen === 'forest';
+    this.main.classList.toggle('forest-mode', forest);
+    this.main.replaceChildren(forest ? node : h('div', { class: 'screen-inner' }, node));
     this.main.scrollTop = scroll;
-    if (this.screen === 'forest') requestAnimationFrame(() => this.forest.resize());
+    if (forest) requestAnimationFrame(() => this.forest.resize());
   }
 
   /** Per-second refresh of live values without a full re-render. */

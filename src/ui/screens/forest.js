@@ -9,31 +9,62 @@ export function renderForest(app) {
   const areas = STAGES.filter((st) => G.stageDiscovered(s, st.id));
   if (!s.world.areas[app.ui.area]) app.ui.area = 'clearing';
   app.forest.setArea(app.ui.area);
-  const area = s.world.areas[app.ui.area];
-
-  const tabs = h('div', { class: 'tabs scroll-x', role: 'tablist' }, areas.map((st) => h('button', {
-    type: 'button', role: 'tab', class: 'tab' + (st.id === app.ui.area ? ' active' : ''),
-    onclick: () => { app.ui.area = st.id; app.render(); },
-  }, st.name)));
-
-  const ruins = area.objects.filter((o) => o.state === 'ruin');
   const tool = app.buildTool;
 
-  return h('div', { class: 'forest-screen' },
-    tabs,
-    app.canvasWrap,
-    tool ? buildBar(app) : h('div', { class: 'row gap' },
-      h('button', { type: 'button', class: 'btn', onclick: () => { app.buildTool = { kind: 'place', def: null }; app.render(); } }, '🔨 Build & decorate'),
-      h('span', { class: 'small muted' }, 'Tap a mushroom or structure for details.')),
-    ruins.length ? section('Restore to unlock', ruins.map((o) => {
+  // every ruin waiting for restoration, across discovered areas
+  const ruins = [];
+  for (const st of areas) for (const o of s.world.areas[st.id].objects) if (o.state === 'ruin') ruins.push({ o, st });
+  const affordable = ruins.filter(({ o }) => G.canAfford(s, STRUCTURES[o.def].cost)).length;
+  const info = G.nextStageInfo(s);
+
+  const top = h('div', { class: 'fv-top' },
+    h('div', { class: 'tabs scroll-x fv-tabs', role: 'tablist' }, areas.map((st) => h('button', {
+      type: 'button', role: 'tab', class: 'tab' + (st.id === app.ui.area ? ' active' : ''),
+      onclick: () => { app.ui.area = st.id; app.render(); },
+    }, st.name))),
+    !tool && info && info.stage.discover.type === 'jobCycles' && info.prevDone ? h('button', { type: 'button', class: 'fv-pill', onclick: () => tasksModal(app) },
+      `Next discovery: ${info.progress}/${info.target}`) : null);
+
+  const zoom = h('div', { class: 'fv-zoom' },
+    h('button', { type: 'button', class: 'fv-btn', 'aria-label': 'Zoom in', onclick: () => app.forest.zoomBy(1.5) }, '+'),
+    h('button', { type: 'button', class: 'fv-btn', 'aria-label': 'Zoom out', onclick: () => app.forest.zoomBy(1 / 1.5) }, '−'),
+    h('button', { type: 'button', class: 'fv-btn', 'aria-label': 'Show the whole area', onclick: () => app.forest.fit(true) }, '⤢'));
+
+  const bottom = tool ? buildBar(app) : h('div', { class: 'fv-actions' },
+    h('button', { type: 'button', class: 'fv-btn wide', onclick: () => { app.buildTool = { kind: 'place', def: null }; app.render(); } }, '🔨 Build'),
+    h('button', { type: 'button', class: 'fv-btn wide', onclick: () => tasksModal(app) }, '📋 Tasks', affordable ? h('span', { class: 'fv-badge' }, String(affordable)) : null));
+
+  app.forestOverlay.replaceChildren(top, zoom, bottom);
+  // entering build mode: move the area clear of the build panel
+  if (tool && !app.ui.buildFocused) {
+    app.ui.buildFocused = true;
+    requestAnimationFrame(() => app.forest.focusAbove(bottom.getBoundingClientRect().height));
+  } else if (!tool && app.ui.buildFocused) {
+    app.ui.buildFocused = false;
+    app.forest.computeFit();
+    app.forest.fit(true);
+  }
+  return app.canvasWrap;
+}
+
+/** Restoration, discovery progress and projects — opened from the forest. */
+export function tasksModal(app) {
+  const s = app.state;
+  const ruins = [];
+  for (const st of STAGES) {
+    if (!G.stageDiscovered(s, st.id)) continue;
+    for (const o of s.world.areas[st.id].objects) if (o.state === 'ruin') ruins.push({ o, st });
+  }
+  const md = app.modal(h('div', {},
+    ruins.length ? section('Restore to unlock', ruins.map(({ o, st }) => {
       const def = STRUCTURES[o.def];
       return h('div', { class: 'list-row' },
-        h('div', {}, h('b', {}, def.name), def.job ? h('div', { class: 'small' }, `Unlocks the ${JOB_BY_ID[def.job].name} job`) : null, costView(s, def.cost)),
-        h('button', { type: 'button', class: 'btn primary', disabled: !G.canAfford(s, def.cost), onclick: () => app.act(() => G.restoreStructure(s, o.id, app.now()), `${def.name} restored!`) }, 'Restore'));
+        h('div', {}, h('b', {}, def.name), h('div', { class: 'small muted' }, st.name), def.job ? h('div', { class: 'small' }, `Unlocks the ${JOB_BY_ID[def.job].name} job`) : null, costView(s, def.cost)),
+        h('button', { type: 'button', class: 'btn primary', disabled: !G.canAfford(s, def.cost), onclick: () => { md.close(); app.act(() => G.restoreStructure(s, o.id, app.now()), `${def.name} restored!`); } }, 'Restore'));
     })) : null,
     stageCard(app),
     projectCard(app),
-  );
+    h('p', { class: 'small muted' }, 'Tip: drag to look around the forest, pinch or scroll to zoom, and tap any mushroom or structure.')), { title: 'Forest tasks' });
 }
 
 export function stageCard(app) {

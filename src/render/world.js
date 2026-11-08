@@ -169,6 +169,25 @@ const ART = {
     const a = 0.6 + 0.4 * Math.sin(t * 3);
     ctx.fillStyle = `rgba(255,224,102,${a})`; ctx.fillRect(x + 5, y + 3, 6, 5);
   },
+  tree(ctx, x, y, t) {
+    // a tall leafy tree for the forest beyond the clearing (drawn upward from its base)
+    const sway = Math.round(Math.sin(t * 0.8 + x) * 0.6);
+    r(ctx, 'rgba(0,0,0,0.25)', x - 2, y + 13, 20, 3);
+    r(ctx, C.woodD, x + 6, y + 2, 4, 13); r(ctx, C.wood, x + 7, y + 2, 1, 12);
+    r(ctx, C.leafD, x - 3 + sway, y - 12, 22, 14); r(ctx, C.leafD, x - 1 + sway, y - 17, 18, 6);
+    r(ctx, C.leaf, x - 1 + sway, y - 14, 18, 11); r(ctx, C.leaf, x + 2 + sway, y - 18, 12, 5);
+    r(ctx, C.leafL, x + 1 + sway, y - 15, 6, 3); r(ctx, C.leafL, x + 9 + sway, y - 9, 4, 2);
+  },
+  pine(ctx, x, y, t) {
+    const sway = Math.round(Math.sin(t * 0.7 + y) * 0.5);
+    r(ctx, 'rgba(0,0,0,0.25)', x, y + 13, 16, 3);
+    r(ctx, C.woodD, x + 7, y + 9, 2, 6);
+    for (let i = 0; i < 4; i++) {
+      const w = 4 + i * 4;
+      r(ctx, i % 2 ? C.leafD : '#2a5a2e', x + 8 - w / 2 + sway, y - 14 + i * 6, w, 6);
+    }
+    r(ctx, '#3f7a3c', x + 7 + sway, y - 15, 2, 3);
+  },
   moonstone(ctx, x, y, t) {
     for (const [a, b] of [[2, 8], [12, 8], [7, 4], [7, 12], [4, 5], [10, 11]]) {
       const a2 = 0.5 + 0.5 * Math.sin(t * 2 + a);
@@ -195,4 +214,9 @@ export function drawStructure(ctx, def, tx, ty, state, t) {
     return;
   }
   fn(ctx, x, y, t);
+}
+
+/** Draw a piece of structure art at logical pixel (x, y) — used for the forest beyond the area. */
+export function drawArt(ctx, sprite, x, y, t) {
+  (ART[sprite] || ART.bush)(ctx, x, y, t);
 }
