@@ -21,7 +21,7 @@ export function jobCard(app, job, inModal = false) {
     h('p', { class: 'small' }, job.desc),
     h('div', { class: 'small' }, `Primary: ${STAT_NAMES[job.primary]}${job.secondary ? ` · Secondary: ${STAT_NAMES[job.secondary]}` : ''}`),
     h('div', { class: 'small' }, 'Produces: ', Object.keys(job.outputs).length ? Object.keys(job.outputs).map((r) => h('span', { class: 'chip' }, resIcon(r), resName(r))) : 'project work', job.inputs ? [' · uses ', Object.entries(job.inputs).map(([r, n]) => `${n} ${resName(r)}`).join(' + ')] : null, job.phases ? ' · works at dusk and night' : null),
-    !unlocked ? h('p', { class: 'small warn' }, st && !G.stageDiscovered(s, st.id) ? 'Discover a new area of the forest to find this job.' : `Restore the ${STRUCTURES[job.structure].name} in the ${st ? st.name : 'forest'} to unlock.`) : null,
+    !unlocked ? h('p', { class: 'small warn' }, st && !G.stageDiscovered(s, st.id) ? 'Expand the forest to discover this job.' : `Restore the ${STRUCTURES[job.structure].name} in the ${st ? st.name : 'forest'} to unlock.`) : null,
     unlocked ? h('div', { class: 'workers' }, workers.length ? workers.map((m) => {
       const est = G.estimateJob(s, m, job.id, app.now());
       return h('div', { class: 'worker' },

@@ -208,3 +208,64 @@ test('invalid saves are rejected without replacing anything', () => {
 test('every category has Basic attributes for starters', () => {
   for (const cat of CATEGORIES) assert.ok(ATTRIBUTES.some((a) => a.category === cat && a.tier === 'basic'));
 });
+
+test('the forest grows north, east, south or west; story clearings appear in order', () => {
+  const s = G.newGame({ now: NOW, seed: 'grow', tzOffset: 0 });
+  // not ready: nothing to expand into yet, and plain glades need the Workshop
+  assert.equal(G.expandForest(s, 'clearing', 'north', NOW).ok, false);
+  s.counters.jobCycles.forager = 15;
+  const opt = G.expansionOption(s, 'clearing', 'north');
+  assert.ok(opt.ok && opt.kind === 'stage' && opt.stage.id === 'fungal');
+  const r = G.expandForest(s, 'clearing', 'north', NOW);
+  assert.ok(r.ok);
+  const fungal = s.world.areas.fungal;
+  assert.deepEqual([fungal.cx, fungal.cy], [0, -1]);
+  // a clearing cannot be placed where one already exists
+  assert.equal(G.expandForest(s, 'fungal', 'south', NOW).ok, false);
+  // its job structure spawned somewhere inside, as a ruin, off the path and water
+  const bed = fungal.objects.find((o) => o.def === 'spore_bed');
+  assert.ok(bed && bed.state === 'ruin' && bed.prefab);
+  assert.ok(bed.x >= 1 && bed.x <= 8 && bed.y >= 2 && bed.y <= 7);
+  assert.notEqual(fungal.tiles[bed.y][bed.x], 'p');
+  // a path joins the two clearings
+  assert.equal(fungal.tiles[8][5], 'p');
+  assert.equal(s.world.areas.clearing.tiles[0][5], 'p');
+});
+
+test('new clearings are placed deterministically for the same save and direction', () => {
+  const mk2 = () => { const s = G.newGame({ now: NOW, seed: 'det', tzOffset: 0 }); s.counters.jobCycles.forager = 15; G.expandForest(s, 'clearing', 'west', NOW); return s.world.areas.fungal; };
+  assert.deepEqual(mk2(), mk2());
+});
+
+test('plain glades cost materials once the Workshop is restored, and the price rises', () => {
+  const s = G.newGame({ now: NOW, seed: 'glade', tzOffset: 0 });
+  G.devUnlockAll(s, NOW);
+  assert.equal(G.nextStageInfo(s), null);
+  const free = ['north', 'east', 'south', 'west'].map((d) => [d, G.expansionOption(s, 'clearing', d)]).find(([, o]) => !o.occupied)
+    || Object.keys(s.world.areas).flatMap((id) => ['north', 'east', 'south', 'west'].map((d) => [d, G.expansionOption(s, id, d), id])).find(([, o]) => !o.occupied);
+  const fromId = free[2] || 'clearing';
+  const cost1 = G.plainExpansionCost(s);
+  s.inventory.planks = 0;
+  assert.equal(G.expandForest(s, fromId, free[0], NOW).ok, false);
+  s.inventory.planks = 100; s.inventory.stones = 100;
+  const r = G.expandForest(s, fromId, free[0], NOW);
+  assert.ok(r.ok);
+  assert.equal(r.area.stage, null);
+  assert.equal(s.inventory.planks, 100 - cost1.planks);
+  assert.ok(G.plainExpansionCost(s).planks > cost1.planks);
+  // the glade survives a save round trip
+  assert.ok(parseSave(serialize(s)).world.areas[r.id]);
+});
+
+test('schema 1 saves migrate: areas become clearings with unique positions', () => {
+  const s = G.newGame({ now: NOW, seed: 'mig', tzOffset: 0 });
+  G.devUnlockAll(s, NOW);
+  const old = JSON.parse(serialize(s));
+  old.schemaVersion = 1;
+  for (const a of Object.values(old.world.areas)) { delete a.cx; delete a.cy; delete a.stage; }
+  const migrated = parseSave(JSON.stringify(old));
+  assert.equal(migrated.schemaVersion, 2);
+  const pos = Object.values(migrated.world.areas).map((a) => `${a.cx},${a.cy}`);
+  assert.equal(new Set(pos).size, pos.length);
+  assert.deepEqual([migrated.world.areas.clearing.cx, migrated.world.areas.clearing.cy], [0, 0]);
+});

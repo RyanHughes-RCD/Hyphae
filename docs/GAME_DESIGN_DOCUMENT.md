@@ -2,7 +2,7 @@
 
 ## A cozy breeding, collecting, and forest-life game
 
-**Game Design Document | Version 0.3 | November 2026**
+**Game Design Document | Version 0.4 | November 2026**
 
 > **Design direction:** Begin with three ordinary mushrooms. Breed them,
 > generation by generation, into prized specialists. Give them meaningful
@@ -20,6 +20,7 @@
 | 0.1 | Nov 2026 | Initial design: forest, jobs, breeding, sharing, MVP scope. |
 | 0.2 | Nov 2026 | Expansion: three randomized starters; eight job stats; attribute-driven base stats; RGB colour stat budget; Advanced Traits; Perks; Mutations; stat caps; ordered breeding resolution; staged breeding unlocks; discovery-driven job unlocks; friend genetic donors; forest clock and weather; centralized configuration; anti-exploit rules; required test plan. Conflicts with v0.1 are resolved in place and listed in Appendix A. |
 | 0.3 | Nov 2026 | Owner decisions D-1 to D-15 applied (Appendix B): Rare attributes slightly stronger; Perks, Mutations and Weather/Time promoted to MVP Must-have; day/night follows real local time; one free breeding, then the soft currency **Glimmer**; development stages strictly linear in the listed order; balance simulation of 20+ generations required before probabilities are locked. |
+| 0.4 | Nov 2026 | One continuous forest (D-16): every clearing and job lives on the same forest screen. The forest grows when the player expands it north, east, south or west of a clearing; each story clearing's structures spawn at random positions in the new clearing. Quiet glades (plain clearings) can be bought for building space after the Woodland Workshop. Save schema 2 with migration. |
 
 ### 0.2 Conventions
 
@@ -1185,6 +1186,29 @@ expansion. Every job unlock follows three steps:
 Jobs stay locked until both the discovery and the construction condition
 are met; this is enforced in game logic.
 
+### 12.0 One forest, grown by the player (v0.4, decision D-16)
+
+All clearings belong to one continuous forest shown on a single, pannable
+and zoomable forest screen. The starting clearing sits in the middle.
+
+- **Growing the forest:** when the next story clearing's discovery trigger
+  is met (table below), the forest is *ready to grow*. The player taps
+  **Expand** (or a signpost at an open edge of any clearing) and chooses
+  **north, east, south or west**. A new clearing opens on that side of the
+  chosen clearing.
+- **Random placement:** the new clearing uses its stage's terrain theme;
+  its job and unlock structures spawn as ruins at random free land tiles
+  (spaced apart, never on water or the path). Placement is seeded from the
+  world seed and the clearing's position, so it is reproducible.
+- **Paths:** a path is laid from the new clearing's centre to the shared
+  edge, and from the neighbouring clearing's centre to the same edge.
+- **Quiet glades:** once the Woodland Workshop is restored, the player may
+  also open plain clearings for extra building space (Config: starting at
+  10 planks + 8 stones, rising with each glade). While a story clearing is
+  ready, every expansion opens the story clearing, free.
+- Mushrooms walk between clearings to reach their workstations; idle
+  mushrooms, Guests and Wild Visitors stay in the starting clearing.
+
 ### 12.1 Development stages
 
 | Stage | Discovery trigger (initial) | Construct / restore | Unlocks |
@@ -1903,6 +1927,7 @@ feel of breeding and visible forest life before adding more content.
 | D-13 | Affinity | Derived from highest final stat, 8 names. Approved. |
 | D-14 | Breeding cost | One free breeding, then Glimmer (soft currency). |
 | D-15 | Development stage order | Strictly linear, in the order listed. |
+| D-16 | Forest layout | One continuous forest; the player expands it north, east, south or west, and new job structures spawn at random in the new clearing. |
 
 ### B.1 New items raised by these decisions
 

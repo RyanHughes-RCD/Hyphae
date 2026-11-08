@@ -7,8 +7,36 @@ import { validateRecord, shareRecord } from './share.js';
 export const SAVE_KEY = 'mushroomForest.save';
 export const BACKUP_KEY = 'mushroomForest.save.backup';
 
-// Ordered migrations: index i migrates schema i+1 -> i+2. (None yet: v1 is the first schema.)
-const MIGRATIONS = [];
+// Ordered migrations: index i migrates schema i+1 -> i+2.
+const MIGRATIONS = [
+  // v1 -> v2: separate areas became clearings in one forest. Give each a chunk
+  // position, placing them in discovery order next to existing clearings.
+  (obj) => {
+    const areas = obj.world?.areas || {};
+    const order = Object.entries(areas).sort((a, b) => (a[1].discoveredAt || 0) - (b[1].discoveredAt || 0));
+    const taken = new Set();
+    const dirs = [[1, 0], [0, 1], [-1, 0], [0, -1]];
+    const placed = [];
+    for (const [id, area] of order) {
+      area.stage = id;
+      let spot = { cx: 0, cy: 0 };
+      if (id !== 'clearing' || taken.has('0,0')) {
+        outer: for (const p of placed.length ? placed : [{ cx: 0, cy: 0 }]) {
+          for (const [dx, dy] of dirs) {
+            const k = `${p.cx + dx},${p.cy + dy}`;
+            if (!taken.has(k)) { spot = { cx: p.cx + dx, cy: p.cy + dy }; break outer; }
+          }
+        }
+      }
+      area.cx = spot.cx;
+      area.cy = spot.cy;
+      taken.add(`${spot.cx},${spot.cy}`);
+      placed.push(spot);
+    }
+    obj.schemaVersion = 2;
+    return obj;
+  },
+];
 
 export function migrate(obj) {
   let v = obj.schemaVersion;
@@ -43,7 +71,8 @@ export function validateSave(obj) {
   if (typeof obj.glimmer !== 'number' || obj.glimmer < 0 || !Number.isFinite(obj.glimmer)) throw new Error('Invalid Glimmer balance.');
   for (const [r, n] of Object.entries(obj.inventory)) if (typeof n !== 'number' || n < 0 || !Number.isFinite(n)) throw new Error(`Invalid amount of ${r}.`);
   for (const [id, area] of Object.entries(obj.world.areas || {})) {
-    if (!STAGE_BY_ID[id] || !Array.isArray(area.objects) || !Array.isArray(area.tiles)) throw new Error('Invalid world data.');
+    if (!(STAGE_BY_ID[id] || /^c\d+x*$/.test(id)) || !Array.isArray(area.objects) || !Array.isArray(area.tiles)
+      || !Number.isInteger(area.cx) || !Number.isInteger(area.cy)) throw new Error('Invalid world data.');
     for (const o of area.objects) if (!STRUCTURES[o.def]) throw new Error('Unknown structure in save.');
   }
   return true;

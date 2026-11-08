@@ -291,10 +291,13 @@ test('16. jobs remain locked until discovery and construction conditions are met
     assert.equal(G.jobUnlocked(s, j), false, j);
     assert.equal(G.assignJob(s, m.uid, j, NOW).ok, false);
   }
-  // discovery alone is not enough
+  // reaching the discovery goal lets the forest grow; expanding reveals the clearing
   s.counters.jobCycles.forager = 15;
   G.advance(s, NOW + 1);
+  assert.equal(G.stageDiscovered(s, 'fungal'), false);
+  assert.ok(G.expandForest(s, 'clearing', 'east', NOW + 1).ok);
   assert.ok(G.stageDiscovered(s, 'fungal'));
+  // discovery alone is not enough
   assert.equal(G.jobUnlocked(s, 'mycologist'), false);
   // construction (restoration) completes the unlock
   const bed = s.world.areas.fungal.objects[0];

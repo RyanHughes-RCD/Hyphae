@@ -6,54 +6,93 @@ import { assignPicker, jobCard } from './jobs.js';
 
 export function renderForest(app) {
   const s = app.state;
-  const areas = STAGES.filter((st) => G.stageDiscovered(s, st.id));
-  if (!s.world.areas[app.ui.area]) app.ui.area = 'clearing';
-  app.forest.setArea(app.ui.area);
   const tool = app.buildTool;
-
-  // every ruin waiting for restoration, across discovered areas
   const ruins = [];
-  for (const st of areas) for (const o of s.world.areas[st.id].objects) if (o.state === 'ruin') ruins.push({ o, st });
-  const affordable = ruins.filter(({ o }) => G.canAfford(s, STRUCTURES[o.def].cost)).length;
+  for (const [, area] of Object.entries(s.world.areas)) for (const o of area.objects) if (o.state === 'ruin') ruins.push(o);
+  const affordable = ruins.filter((o) => G.canAfford(s, STRUCTURES[o.def].cost)).length;
   const info = G.nextStageInfo(s);
+  const ready = !!info?.ready;
 
-  const top = h('div', { class: 'fv-top' },
-    h('div', { class: 'tabs scroll-x fv-tabs', role: 'tablist' }, areas.map((st) => h('button', {
-      type: 'button', role: 'tab', class: 'tab' + (st.id === app.ui.area ? ' active' : ''),
-      onclick: () => { app.ui.area = st.id; app.render(); },
-    }, st.name))),
-    !tool && info && info.stage.discover.type === 'jobCycles' && info.prevDone ? h('button', { type: 'button', class: 'fv-pill', onclick: () => tasksModal(app) },
-      `Next discovery: ${info.progress}/${info.target}`) : null);
+  let pill = null;
+  if (!tool && info) {
+    if (ready) pill = h('button', { type: 'button', class: 'fv-pill ready', onclick: () => expandModal(app) }, '✨ The forest is ready to grow! Expand ▸');
+    else if (info.prevDone && info.stage.discover.type === 'jobCycles') pill = h('button', { type: 'button', class: 'fv-pill', onclick: () => tasksModal(app) }, `Next discovery: ${info.progress}/${info.target}`);
+  }
+  const top = h('div', { class: 'fv-top' }, pill);
 
   const zoom = h('div', { class: 'fv-zoom' },
     h('button', { type: 'button', class: 'fv-btn', 'aria-label': 'Zoom in', onclick: () => app.forest.zoomBy(1.5) }, '+'),
     h('button', { type: 'button', class: 'fv-btn', 'aria-label': 'Zoom out', onclick: () => app.forest.zoomBy(1 / 1.5) }, '−'),
-    h('button', { type: 'button', class: 'fv-btn', 'aria-label': 'Show the whole area', onclick: () => app.forest.fit(true) }, '⤢'));
+    h('button', { type: 'button', class: 'fv-btn', 'aria-label': 'Show the whole forest', onclick: () => app.forest.fit(true) }, '⤢'));
 
   const bottom = tool ? buildBar(app) : h('div', { class: 'fv-actions' },
-    h('button', { type: 'button', class: 'fv-btn wide', onclick: () => { app.buildTool = { kind: 'place', def: null }; app.render(); } }, '🔨 Build'),
-    h('button', { type: 'button', class: 'fv-btn wide', onclick: () => tasksModal(app) }, '📋 Tasks', affordable ? h('span', { class: 'fv-badge' }, String(affordable)) : null));
+    actionBtn('🔨', 'Build', () => { app.buildTool = { kind: 'place', def: null }; app.render(); }),
+    actionBtn('🧭', 'Expand', () => expandModal(app), ready ? 'glow' : ''),
+    actionBtn('📋', 'Tasks', () => tasksModal(app), '', affordable));
 
   app.forestOverlay.replaceChildren(top, zoom, bottom);
-  // entering build mode: move the area clear of the build panel
+  // entering build mode: move the clearing in view clear of the build panel
   if (tool && !app.ui.buildFocused) {
     app.ui.buildFocused = true;
     requestAnimationFrame(() => app.forest.focusAbove(bottom.getBoundingClientRect().height));
   } else if (!tool && app.ui.buildFocused) {
     app.ui.buildFocused = false;
     app.forest.computeFit();
-    app.forest.fit(true);
+    app.forest.focusArea(app.forest.centreArea(), true);
   }
   return app.canvasWrap;
+}
+
+function actionBtn(icon, label, onclick, extra = '', badge = 0) {
+  return h('button', { type: 'button', class: `fv-btn action ${extra}`, onclick },
+    h('span', { class: 'fv-ico', 'aria-hidden': 'true' }, icon), h('span', { class: 'fv-lbl' }, label),
+    badge ? h('span', { class: 'fv-badge' }, String(badge)) : null);
+}
+
+/** Choose a direction to grow the forest from the clearing in view (or a given one). */
+export function expandModal(app, fromId = null, onlyDir = null) {
+  const s = app.state;
+  fromId = fromId || app.forest.centreArea();
+  const info = G.nextStageInfo(s);
+  const cell = (dir) => {
+    const d = G.DIRECTIONS[dir];
+    const opt = G.expansionOption(s, fromId, dir);
+    const from = s.world.areas[fromId];
+    if (opt.occupied) {
+      const n = G.areaAt(s, from.cx + d.dx, from.cy + d.dy);
+      return h('button', { type: 'button', class: `dir-btn ${dir}`, disabled: true }, h('b', {}, `${d.arrow} ${d.label}`), h('span', { class: 'small' }, G.areaName(n.id)));
+    }
+    const what = opt.kind === 'stage' ? 'Something new to discover!' : opt.kind === 'plain' ? 'A quiet glade' : 'Not yet';
+    return h('button', {
+      type: 'button', class: `dir-btn ${dir}` + (opt.ok ? ' ok' : ''), disabled: !opt.ok,
+      onclick: () => {
+        md.close();
+        const r = app.act(() => G.expandForest(s, fromId, dir, app.now()));
+        if (r.ok) { app.forest.computeFit(); app.forest.focusArea(r.id, true); }
+      },
+    }, h('b', {}, `${d.arrow} ${d.label}`), h('span', { class: 'small' }, what), opt.kind === 'plain' ? costView(s, opt.cost) : null);
+  };
+  const dirs = onlyDir ? [onlyDir] : ['north', 'west', 'east', 'south'];
+  let note;
+  if (info?.ready) note = h('p', {}, 'The next part of the forest is ready to be discovered. Choose which way it grows — its structures will appear somewhere in the new clearing.');
+  else if (info) note = h('p', { class: 'small' }, info.prevDone ? `Not ready to discover more yet: ${info.stage.hint}` : `Not ready yet: restore everything in the ${info.prevStage.name} first.`,
+    G.stageComplete(s, 'workshop') ? ' You can still open a quiet glade for extra building space.' : '');
+  else note = h('p', { class: 'small' }, 'Every part of the story forest has been found. Quiet glades give you more room to build.');
+  const md = app.modal(h('div', {},
+    note,
+    h('div', { class: 'dir-grid' + (onlyDir ? ' single' : '') },
+      dirs.map(cell),
+      onlyDir ? null : h('div', { class: 'dir-centre' }, h('span', { class: 'small muted' }, 'From'), h('b', {}, G.areaName(fromId)))),
+    onlyDir ? null : h('p', { class: 'small muted' }, 'Tip: pan to another clearing to expand from there, or tap a signpost at a clearing\'s edge.')),
+  { title: onlyDir ? `Expand ${G.DIRECTIONS[onlyDir].label.toLowerCase()} from ${G.areaName(fromId)}` : 'Grow the forest' });
 }
 
 /** Restoration, discovery progress and projects — opened from the forest. */
 export function tasksModal(app) {
   const s = app.state;
   const ruins = [];
-  for (const st of STAGES) {
-    if (!G.stageDiscovered(s, st.id)) continue;
-    for (const o of s.world.areas[st.id].objects) if (o.state === 'ruin') ruins.push({ o, st });
+  for (const [id, area] of Object.entries(s.world.areas)) {
+    for (const o of area.objects) if (o.state === 'ruin') ruins.push({ o, st: { name: G.areaName(id) } });
   }
   const md = app.modal(h('div', {},
     ruins.length ? section('Restore to unlock', ruins.map(({ o, st }) => {
@@ -73,6 +112,10 @@ export function stageCard(app) {
   if (!info) return section('Forest explored', h('p', {}, 'You have discovered every area of the forest. More areas may grow in future seasons.'));
   const { stage, prevDone, prevStage, progress, target } = info;
   const body = [];
+  if (info.ready) {
+    return section('The forest is ready to grow!', h('p', {}, 'Expand the forest north, east, south or west to discover what lies beyond.'),
+      h('button', { type: 'button', class: 'btn primary', onclick: () => { app.closeAllModals(); expandModal(app); } }, '🧭 Choose a direction'));
+  }
   if (!prevDone) body.push(h('p', {}, `First, restore everything in the ${prevStage.name}.`));
   body.push(h('p', { class: 'small' }, stage.hint || ''));
   if (stage.discover.type === 'jobCycles') {

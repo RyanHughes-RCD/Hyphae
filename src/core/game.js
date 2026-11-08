@@ -12,7 +12,7 @@ import { computeStats, colorFamily } from './stats.js';
 import { generateStarters, generateWildVisitor, resolveBreeding } from './genetics.js';
 import { conditionsAt, localParts, currentTzOffset } from './time.js';
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 const HOUR = 3600000;
 const MIN = 60000;
 
@@ -57,7 +57,7 @@ export function newGame({ now = Date.now(), seed = freshSeed(), forestName = 'My
     activity: [],
   };
   for (const r of ['twigs', 'leaves']) state.inventory[r] = 4;
-  discoverArea(state, 'clearing', now, true);
+  createStartClearing(state, now);
   for (const m of state.mushrooms) recordDiscovery(state, m);
   event(state, 'welcome', 'Welcome to your forest', 'Three little mushrooms have made the clearing their home. Give them jobs, then try breeding two of them at the Breeding Nook.');
   return state;
@@ -125,20 +125,81 @@ export function statsOf(state, m) {
   return computeStats(m, { traits: state.unlocks.traits, mutations: state.unlocks.mutations });
 }
 
-// ---------------------------------------------------------------- world / stages
+// ---------------------------------------------------------------- world: one forest of clearings
+//
+// The forest is a grid of clearings (AREA_W × AREA_H tiles each). The starting
+// clearing sits at chunk (0, 0). Story clearings are keyed by their stage id;
+// extra plain clearings are keyed "c1", "c2", …  The forest grows when the
+// player expands it north, east, south or west of a clearing (decision D-16).
 
-function discoverArea(state, stageId, now, silent = false) {
-  const st = STAGE_BY_ID[stageId];
-  if (state.world.areas[stageId]) return;
-  state.world.areas[stageId] = {
-    discoveredAt: now,
-    tiles: st.map.slice(),
+export const DIRECTIONS = {
+  north: { dx: 0, dy: -1, label: 'North', arrow: '↑' },
+  east: { dx: 1, dy: 0, label: 'East', arrow: '→' },
+  south: { dx: 0, dy: 1, label: 'South', arrow: '↓' },
+  west: { dx: -1, dy: 0, label: 'West', arrow: '←' },
+};
+
+export function areaAt(state, cx, cy) {
+  for (const [id, a] of Object.entries(state.world.areas)) if (a.cx === cx && a.cy === cy) return { id, area: a };
+  return null;
+}
+
+export function areaName(id) {
+  return STAGE_BY_ID[id]?.name || 'Quiet Glade';
+}
+
+const EDGE_MID = {
+  north: { x: Math.floor(AREA_W / 2), y: 0 },
+  south: { x: Math.floor(AREA_W / 2), y: AREA_H - 1 },
+  west: { x: 0, y: Math.floor(AREA_H / 2) },
+  east: { x: AREA_W - 1, y: Math.floor(AREA_H / 2) },
+};
+const OPPOSITE = { north: 'south', south: 'north', east: 'west', west: 'east' };
+
+/** Lay a path from a clearing's centre to one of its edges (only over soft ground). */
+function carvePath(area, dir) {
+  const c = { x: Math.floor(AREA_W / 2), y: Math.floor(AREA_H / 2) };
+  const e = EDGE_MID[dir];
+  const set = (x, y) => {
+    const t = area.tiles[y][x];
+    if ('gmldh'.includes(t)) area.tiles[y] = area.tiles[y].slice(0, x) + 'p' + area.tiles[y].slice(x + 1);
+  };
+  for (let x = Math.min(c.x, e.x); x <= Math.max(c.x, e.x); x++) set(x, c.y);
+  for (let y = Math.min(c.y, e.y); y <= Math.max(c.y, e.y); y++) set(e.x, y);
+}
+
+function plainTiles(rng) {
+  const rows = [];
+  for (let y = 0; y < AREA_H; y++) {
+    let row = '';
+    for (let x = 0; x < AREA_W; x++) row += rng.chance(0.12) ? 'm' : rng.chance(0.06) ? 'l' : 'g';
+    rows.push(row);
+  }
+  return rows;
+}
+
+/** Scatter structures on random free land tiles, spaced apart. */
+function scatterObjects(state, area, defs, rng) {
+  const spots = [];
+  for (let y = 2; y <= AREA_H - 2; y++) for (let x = 1; x <= AREA_W - 2; x++) {
+    const t = area.tiles[y][x];
+    if (t !== 'w' && t !== 'p') spots.push({ x, y });
+  }
+  const placed = [];
+  for (const def of defs) {
+    const free = rng.shuffle(spots).filter((p) => placed.every((q) => Math.max(Math.abs(q.x - p.x), Math.abs(q.y - p.y)) >= 2));
+    const spot = free[0] || rng.pick(spots.filter((p) => !placed.some((q) => q.x === p.x && q.y === p.y)));
+    placed.push(spot);
+    area.objects.push({ id: 'o' + state.nextObjectId++, def, x: spot.x, y: spot.y, state: 'ruin', prefab: true });
+  }
+}
+
+function createStartClearing(state, now) {
+  const st = STAGE_BY_ID.clearing;
+  state.world.areas.clearing = {
+    stage: 'clearing', cx: 0, cy: 0, discoveredAt: now, tiles: st.map.slice(),
     objects: st.objects.map((o) => ({ id: 'o' + state.nextObjectId++, def: o.def, x: o.x, y: o.y, state: o.state, prefab: true })),
   };
-  if (!silent) {
-    event(state, 'discovery', `Discovered: ${st.name}`, st.blurb + ' Restore its structures to unlock new jobs.');
-    state.glimmer += getConfig().economy.milestoneGlimmer;
-  }
 }
 
 export function stageDiscovered(state, stageId) {
@@ -157,7 +218,7 @@ export function jobUnlocked(state, jobId) {
   return allObjects(state).some((o) => o.def === job.structure && o.state === 'built');
 }
 
-/** The next stage and its progress toward discovery (strictly linear, D-15). */
+/** The next story clearing and how close the forest is to revealing it (strictly linear, D-15). */
 export function nextStageInfo(state) {
   for (let i = 0; i < STAGES.length; i++) {
     const st = STAGES[i];
@@ -174,21 +235,78 @@ export function nextStageInfo(state) {
       const p = state.projects[d.project];
       progress = p?.state === 'done' ? 1 : 0;
     }
-    return { stage: st, prevDone, prevStage: prev, progress: Math.min(progress, target), target };
+    progress = Math.min(progress, target);
+    return { stage: st, prevDone, prevStage: prev, progress, target, ready: prevDone && progress >= target };
   }
   return null;
 }
 
-function checkStages(state, now) {
-  let changed = true;
-  while (changed) {
-    changed = false;
-    const info = nextStageInfo(state);
-    if (info && info.prevDone && info.progress >= info.target) {
-      discoverArea(state, info.stage.id, now);
-      changed = true;
-    }
+export function plainClearingCount(state) {
+  return Object.values(state.world.areas).filter((a) => !a.stage || !STAGE_BY_ID[a.stage]).length;
+}
+
+export function plainExpansionCost(state) {
+  const n = plainClearingCount(state);
+  return { planks: 10 + 6 * n, stones: 8 + 4 * n };
+}
+
+/** What expanding in `dir` from clearing `fromId` would do right now. */
+export function expansionOption(state, fromId, dir) {
+  const from = state.world.areas[fromId];
+  const d = DIRECTIONS[dir];
+  if (!from || !d) return { ok: false, reason: 'Unknown direction.' };
+  const cx = from.cx + d.dx;
+  const cy = from.cy + d.dy;
+  if (areaAt(state, cx, cy)) return { ok: false, occupied: true, reason: 'There is already a clearing that way.' };
+  const info = nextStageInfo(state);
+  if (info?.ready) return { ok: true, kind: 'stage', stage: info.stage, cx, cy, cost: {} };
+  if (!stageComplete(state, 'workshop')) {
+    return { ok: false, reason: info ? (info.prevDone ? info.stage.hint : `Restore everything in the ${info.prevStage.name} first.`) : 'Not ready yet.' };
   }
+  const cost = plainExpansionCost(state);
+  return { ok: canAfford(state, cost), kind: 'plain', cx, cy, cost, reason: canAfford(state, cost) ? null : 'Not enough materials for a new glade.', stageHint: info && !info.ready ? info : null };
+}
+
+export function expandForest(state, fromId, dir, now) {
+  const opt = expansionOption(state, fromId, dir);
+  if (!opt.ok) return fail(opt.reason);
+  const from = state.world.areas[fromId];
+  const rng = makeRng(hash(state.worldSeed, 'clearing', opt.cx, opt.cy, Object.keys(state.world.areas).length));
+  let id;
+  let area;
+  if (opt.kind === 'stage') {
+    const st = opt.stage;
+    id = st.id;
+    area = { stage: st.id, cx: opt.cx, cy: opt.cy, discoveredAt: now, tiles: st.map.slice(), objects: [] };
+    carvePath(area, OPPOSITE[dir]);
+    scatterObjects(state, area, st.objects.map((o) => o.def), rng);
+  } else {
+    pay(state, opt.cost);
+    id = 'c' + (plainClearingCount(state) + 1);
+    while (state.world.areas[id]) id += 'x';
+    area = { stage: null, cx: opt.cx, cy: opt.cy, discoveredAt: now, tiles: plainTiles(rng), objects: [] };
+    carvePath(area, OPPOSITE[dir]);
+  }
+  carvePath(from, dir);
+  state.world.areas[id] = area;
+  if (opt.kind === 'stage') {
+    const st = opt.stage;
+    event(state, 'discovery', `Discovered: ${st.name}`, `${st.blurb} Restore its structures to unlock new jobs.`);
+    state.glimmer += getConfig().economy.milestoneGlimmer;
+  } else event(state, 'expand', 'A new glade opens up', 'More room to build, decorate and house mushrooms.');
+  return ok({ id, area });
+}
+
+/** Announce (once) when the forest is ready to grow. */
+function checkStages(state) {
+  const info = nextStageInfo(state);
+  if (!info?.ready) return;
+  state.flags.readyAnnounced = state.flags.readyAnnounced || {};
+  if (state.flags.readyAnnounced[info.stage.id]) return;
+  state.flags.readyAnnounced[info.stage.id] = true;
+  event(state, state.flags.readyAnnounced.__first ? 'ready' : 'unlock:expand', 'The forest is ready to grow!',
+    'Tap Expand (or a signpost at the edge of a clearing) and choose north, east, south or west. A new clearing will open that way, with something to discover.');
+  state.flags.readyAnnounced.__first = true;
 }
 
 export function checkUnlocks(state, now) {
@@ -237,7 +355,7 @@ export function restoreStructure(state, objectId, now) {
     state.discoveries.jobs[def.job] = true;
     event(state, 'job', `Job unlocked: ${JOB_BY_ID[def.job].name}`, JOB_BY_ID[def.job].desc);
   }
-  checkStages(state, now);
+  checkStages(state);
   return ok();
 }
 
@@ -268,7 +386,7 @@ export function buildStructure(state, defId, areaId, x, y, now) {
   if (!canAfford(state, cost)) return fail('Not enough materials.');
   pay(state, cost);
   state.world.areas[areaId].objects.push({ id: 'o' + state.nextObjectId++, def: defId, x, y, state: 'built', prefab: false });
-  checkStages(state, now);
+  checkStages(state);
   return ok();
 }
 
@@ -661,7 +779,7 @@ export function advance(state, now) {
   updateVisitors(state, now, report);
   report.readyBreedings = state.breedings.filter((b) => b.state === 'incubating' && b.completesAt <= now).length;
   state.lastSeenAt = now;
-  checkStages(state, now);
+  checkStages(state);
   checkUnlocks(state, now);
   return report;
 }
@@ -843,15 +961,23 @@ export function devGrant(state, amount = 50) {
 }
 
 export function devUnlockAll(state, now) {
-  for (const st of STAGES) {
-    discoverArea(state, st.id, now, true);
-    for (const o of state.world.areas[st.id].objects) o.state = 'built';
-    for (const o of state.world.areas[st.id].objects) {
+  const dirs = ['east', 'south', 'west', 'north'];
+  let guard = 0;
+  while (nextStageInfo(state) && guard++ < 20) {
+    const info = nextStageInfo(state);
+    for (const p of Object.keys(PROJECTS)) state.projects[p] = { state: 'done', progress: PROJECTS[p].work };
+    for (const j of info.stage.discover.jobs || []) state.counters.jobCycles[j] = Math.max(state.counters.jobCycles[j] || 0, info.stage.discover.count);
+    let done = false;
+    for (const [id] of Object.entries(state.world.areas)) {
+      for (const d of dirs) if (!done && expansionOption(state, id, d).ok) { expandForest(state, id, d, now); done = true; }
+      if (done) break;
+    }
+    for (const a of Object.values(state.world.areas)) for (const o of a.objects) {
+      o.state = 'built';
       const def = STRUCTURES[o.def];
       if (def.job) state.discoveries.jobs[def.job] = true;
     }
   }
-  for (const p of Object.keys(PROJECTS)) state.projects[p] = { state: 'done', progress: PROJECTS[p].work };
   state.station = 'moonlit_cradle';
   state.breedingsCompleted = Math.max(state.breedingsCompleted, 2);
   discoverMoonstone(state, now);

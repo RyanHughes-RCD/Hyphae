@@ -19,7 +19,8 @@ Then open <http://localhost:8080/>.
 
 **Controls:** drag to look around the forest, pinch or scroll to zoom (or use
 the + / − buttons), ⤢ to frame the whole area, and tap a mushroom or
-structure for details. Add `?dev` to the URL to show developer
+structure for details. When the forest is ready to grow, tap **Expand** (or a
+signpost at a clearing's edge) and choose north, east, south or west. Add `?dev` to the URL to show developer
 tools (grant resources, unlock everything, skip time, force rolls, generate
 test mushrooms, override day phase/weather).
 

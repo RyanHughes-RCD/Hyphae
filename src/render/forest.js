@@ -33,7 +33,6 @@ export class ForestView {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.app = app;
-    this.areaId = 'clearing';
     this.agents = new Map();
     this.popups = [];
     this.hover = null;
@@ -44,9 +43,7 @@ export class ForestView {
     this.fitted = false;
     this.pointers = new Map();
     this.gesture = null;
-    this.terrainCache = { key: null, canvas: document.createElement('canvas') };
-    this.terrainCache.canvas.width = LW;
-    this.terrainCache.canvas.height = LH;
+    this.terrainCaches = new Map();
     this.rng = makeRng(Date.now() & 0xffff);
     this.decor = new Map();
 
@@ -65,6 +62,37 @@ export class ForestView {
     this.resize();
   }
 
+  // ------------------------------------------------------------- world geometry
+  areas() {
+    return Object.entries(this.app.state.world.areas).map(([id, area]) => ({ id, area, ox: area.cx * LW, oy: area.cy * LH }));
+  }
+
+  areaOrigin(areaId) {
+    const a = this.app.state.world.areas[areaId];
+    return a ? { x: a.cx * LW, y: a.cy * LH } : { x: 0, y: 0 };
+  }
+
+  /** Bounding box of every clearing, in logical pixels. */
+  bounds() {
+    const as = this.areas();
+    if (!as.length) return { x0: 0, y0: 0, x1: LW, y1: LH };
+    return {
+      x0: Math.min(...as.map((a) => a.ox)), y0: Math.min(...as.map((a) => a.oy)),
+      x1: Math.max(...as.map((a) => a.ox + LW)), y1: Math.max(...as.map((a) => a.oy + LH)),
+    };
+  }
+
+  /** The clearing nearest the centre of the view. */
+  centreArea() {
+    let best = null;
+    let bd = Infinity;
+    for (const a of this.areas()) {
+      const d = Math.hypot(a.ox + LW / 2 - this.cam.x, a.oy + LH / 2 - this.cam.y);
+      if (d < bd) { bd = d; best = a.id; }
+    }
+    return best || 'clearing';
+  }
+
   // ------------------------------------------------------------- sizing & camera
   resize() {
     const box = this.canvas.parentElement?.getBoundingClientRect();
@@ -78,7 +106,7 @@ export class ForestView {
     this.canvas.style.height = this.vh + 'px';
     const prevFit = this.fitZoom;
     this.computeFit();
-    if (!this.fitted) this.fit(false);
+    if (!this.fitted) this.focusArea('clearing', false);
     else {
       if (prevFit) this.cam.zoom *= this.fitZoom / prevFit;
       this.clampCamera();
@@ -92,38 +120,48 @@ export class ForestView {
     return { side: hedge * 0.75, top: hedge * 0.6 + 48, bottom: hedge * 0.6 + 64 };
   }
 
+  /** fitZoom frames one clearing; the minimum zoom shows the whole forest. */
   computeFit() {
     const ins = this.insets();
-    const zw = (this.vw - 2 * ins.side) / LW;
-    const zh = (this.vh - ins.top - ins.bottom) / LH;
-    this.fitZoom = Math.max(0.5, Math.min(zw, zh));
-    this.minZoom = this.fitZoom;
+    const fitTo = (w, h) => Math.min((this.vw - 2 * ins.side) / w, (this.vh - ins.top - ins.bottom) / h);
+    this.fitZoom = Math.max(0.5, fitTo(LW, LH));
+    const b = this.bounds();
+    this.forestZoom = Math.max(0.25, Math.min(this.fitZoom, fitTo(b.x1 - b.x0, b.y1 - b.y0)));
+    this.minZoom = this.forestZoom;
     this.maxZoom = this.fitZoom * ZOOM_RANGE;
   }
 
-  /** Frame the whole area. */
-  fit(animate = true) {
+  frame(cx, cy, z, animate) {
     const ins = this.insets();
-    const z = this.fitZoom;
-    const cx = LW / 2;
-    const cy = LH / 2 - (ins.top - ins.bottom) / (2 * z);
-    if (animate) this.cam.target = { x: cx, y: cy, zoom: z };
-    else Object.assign(this.cam, { x: cx, y: cy, zoom: z, target: null, vx: 0, vy: 0 });
+    const target = { x: cx, y: cy - (ins.top - ins.bottom) / (2 * z), zoom: z };
+    if (animate) this.cam.target = target;
+    else Object.assign(this.cam, target, { target: null, vx: 0, vy: 0 });
     this.fitted = true;
   }
 
-  /** Glide so the area's centre sits in the space above a panel `px` CSS pixels tall. */
+  /** Frame one clearing. */
+  focusArea(areaId, animate = true) {
+    const o = this.areaOrigin(areaId);
+    this.frame(o.x + LW / 2, o.y + LH / 2, this.fitZoom, animate);
+  }
+
+  /** Frame the whole forest. */
+  fit(animate = true) {
+    this.computeFit();
+    const b = this.bounds();
+    this.frame((b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2, this.forestZoom, animate);
+  }
+
+  /** Glide so the clearing in view sits in the space above a panel `px` CSS pixels tall. */
   focusAbove(px) {
-    const z = this.cam.target ? this.cam.target.zoom : this.cam.zoom;
+    const o = this.areaOrigin(this.centreArea());
     const ins = this.insets();
-    const freeTop = ins.top;
     const freeBottom = Math.max(ins.bottom, px + 20);
-    const target = { x: LW / 2, y: LH / 2 - (freeTop - freeBottom) / (2 * z), zoom: z };
-    // fit the area into the free space if it does not fit at this zoom
-    const fitZ = Math.min((this.vw - 2 * ins.side) / LW, (this.vh - freeTop - freeBottom) / LH);
-    if (fitZ < z) { target.zoom = Math.max(this.minZoom * 0.75, fitZ); target.y = LH / 2 - (freeTop - freeBottom) / (2 * target.zoom); }
-    this.minZoom = Math.min(this.minZoom, target.zoom);
-    this.cam.target = target;
+    let z = this.cam.target ? this.cam.target.zoom : this.cam.zoom;
+    const fitZ = Math.min((this.vw - 2 * ins.side) / LW, (this.vh - ins.top - freeBottom) / LH);
+    if (fitZ < z) z = Math.max(this.minZoom * 0.75, fitZ);
+    this.minZoom = Math.min(this.minZoom, z);
+    this.cam.target = { x: o.x + LW / 2, y: o.y + LH / 2 - (ins.top - freeBottom) / (2 * z), zoom: z };
   }
 
   zoomBy(f) {
@@ -145,9 +183,10 @@ export class ForestView {
   clampCamera() {
     const c = this.cam;
     c.zoom = clamp(c.zoom, this.minZoom, this.maxZoom);
-    // the centre of the view may wander a little beyond the area, never far into the woods
-    c.x = clamp(c.x, -PAN_MARGIN, LW + PAN_MARGIN);
-    c.y = clamp(c.y, -PAN_MARGIN, LH + PAN_MARGIN);
+    // the centre of the view may wander a little beyond the forest, never far into the woods
+    const b = this.bounds();
+    c.x = clamp(c.x, b.x0 - PAN_MARGIN, b.x1 + PAN_MARGIN);
+    c.y = clamp(c.y, b.y0 - PAN_MARGIN, b.y1 + PAN_MARGIN);
   }
 
   toWorld(sx, sy) {
@@ -159,13 +198,29 @@ export class ForestView {
     return { x: e.clientX - r.left, y: e.clientY - r.top };
   }
 
-  setArea(id) {
-    if (this.areaId !== id) {
-      this.areaId = id;
-      this.agents.clear();
-      this.popups = [];
-      this.fit(false);
+  /** Which clearing and local tile a world point falls in. */
+  tileAt(wx, wy) {
+    const cx = Math.floor(wx / LW);
+    const cy = Math.floor(wy / LH);
+    const hit = Object.entries(this.app.state.world.areas).find(([, a]) => a.cx === cx && a.cy === cy);
+    if (!hit) return null;
+    return { areaId: hit[0], x: Math.floor((wx - cx * LW) / TILE), y: Math.floor((wy - cy * LH) / TILE) };
+  }
+
+  /** Signposts at every open edge of every clearing: where the forest can grow. */
+  signposts() {
+    const out = [];
+    const G = this.app.game;
+    for (const { id, area, ox, oy } of this.areas()) {
+      for (const dir of ['north', 'east', 'south', 'west']) {
+        const d = G.DIRECTIONS[dir];
+        if (G.areaAt(this.app.state, area.cx + d.dx, area.cy + d.dy)) continue;
+        const x = ox + LW / 2 + d.dx * (LW / 2 + 10);
+        const y = oy + LH / 2 + d.dy * (LH / 2 + 10) + 8;
+        out.push({ areaId: id, dir, x, y, ready: G.expansionOption(this.app.state, id, dir).ok });
+      }
     }
+    return out;
   }
 
   // ------------------------------------------------------------- input
@@ -189,7 +244,7 @@ export class ForestView {
     const p = this.local(e);
     if (e.pointerType === 'mouse' && !this.pointers.size) {
       const w = this.toWorld(p.x, p.y);
-      this.hover = { x: Math.floor(w.x / TILE), y: Math.floor(w.y / TILE) };
+      this.hover = { wx: w.x, wy: w.y };
     }
     if (!this.pointers.has(e.pointerId)) return;
     this.pointers.set(e.pointerId, p);
@@ -246,10 +301,10 @@ export class ForestView {
 
   tap(p) {
     const w = this.toWorld(p.x, p.y);
-    const tile = { x: Math.floor(w.x / TILE), y: Math.floor(w.y / TILE) };
-    const inArea = tile.x >= 0 && tile.y >= 0 && tile.x < AREA_W && tile.y < AREA_H;
+    const t = this.tileAt(w.x, w.y);
+    const inArea = t && t.x >= 0 && t.y >= 0 && t.x < AREA_W && t.y < AREA_H;
     if (this.app.buildTool) {
-      if (inArea) this.app.onTapTile(this.areaId, tile.x, tile.y);
+      if (inArea) this.app.onTapTile(t.areaId, t.x, t.y);
       return;
     }
     const hits = [...this.agents.values()].filter((a) => w.x >= a.x - SPRITE_W / 2 && w.x <= a.x + SPRITE_W / 2 && w.y >= a.y - SPRITE_H && w.y <= a.y + 2);
@@ -258,9 +313,10 @@ export class ForestView {
       this.app.onTapMushroom(hits[0].uid);
       return;
     }
+    const post = this.signposts().find((sp) => Math.abs(w.x - sp.x) < 10 && w.y > sp.y - 20 && w.y < sp.y + 4);
+    if (post) { this.app.onTapSignpost(post.areaId, post.dir); return; }
     if (!inArea) return;
-    const area = this.app.state.world.areas[this.areaId];
-    const obj = area?.objects.find((o) => o.x === tile.x && o.y === tile.y);
+    const obj = this.app.state.world.areas[t.areaId].objects.find((o) => o.x === t.x && o.y === t.y);
     if (obj) this.app.onTapObject(obj.id);
   }
 
@@ -268,33 +324,37 @@ export class ForestView {
   population() {
     const s = this.app.state;
     const out = [];
-    const area = s.world.areas[this.areaId];
-    if (!area) return out;
-    const objIds = new Set(area.objects.map((o) => o.id));
+    const objIds = new Set();
+    for (const a of Object.values(s.world.areas)) for (const o of a.objects) objIds.add(o.id);
     for (const m of s.mushrooms) {
       if (m.status !== 'resident') continue;
       if (m.work && objIds.has(m.work.structureId)) out.push({ m, kind: 'worker' });
-      else if (!m.work && this.areaId === 'clearing') out.push({ m, kind: 'idle' });
+      else if (!m.work) out.push({ m, kind: 'idle' });
     }
-    if (this.areaId === 'clearing') {
-      for (const g of s.guests) out.push({ m: g, kind: 'guest' });
-      for (const v of s.wildVisitors) out.push({ m: v.mushroom, kind: 'wild' });
-    }
-    return out.slice(0, getConfig().world.visibleMushroomCap + 4);
+    for (const g of s.guests) out.push({ m: g, kind: 'guest' });
+    for (const v of s.wildVisitors) out.push({ m: v.mushroom, kind: 'wild' });
+    return out.slice(0, getConfig().world.visibleMushroomCap * 3);
   }
 
   workSpot(m) {
-    const area = this.app.state.world.areas[this.areaId];
-    const obj = area.objects.find((o) => o.id === m.work.structureId);
+    const found = this.app.game.objectById(this.app.state, m.work.structureId);
+    const obj = found.obj;
+    const o = this.areaOrigin(found.areaId);
     const siblings = this.app.state.mushrooms.filter((x) => x.work?.structureId === obj.id);
     const k = siblings.indexOf(m);
     const offsets = [[-6, 18], [22, 18], [8, 22]];
     const [ox, oy] = offsets[k % offsets.length];
-    return { x: clamp(obj.x * TILE + ox, EDGE, LW - EDGE), y: clamp(obj.y * TILE + oy, SPRITE_H, LH - 4) };
+    return { x: o.x + clamp(obj.x * TILE + ox, EDGE, LW - EDGE), y: o.y + clamp(obj.y * TILE + oy, SPRITE_H, LH - 4) };
   }
 
-  randomSpot() {
-    return { x: EDGE + this.rng.next() * (LW - 2 * EDGE), y: SPRITE_H + this.rng.next() * (LH - SPRITE_H - 6) };
+  /** Somewhere in a clearing (the starting clearing by default) — for free-time wandering. */
+  randomSpot(areaId = 'clearing') {
+    const o = this.areaOrigin(areaId);
+    return { x: o.x + EDGE + this.rng.next() * (LW - 2 * EDGE), y: o.y + SPRITE_H + this.rng.next() * (LH - SPRITE_H - 6) };
+  }
+
+  nearSpot(p, r = 24) {
+    return { x: p.x + (this.rng.next() - 0.5) * 2 * r, y: p.y + (this.rng.next() - 0.5) * r };
   }
 
   syncAgents() {
@@ -324,8 +384,7 @@ export class ForestView {
           a.squashV += 2.2; // a happy little hop of effort
           if (job.anim === 'carry' || job.anim === 'dig') {
             a.carry = resourceColor(main);
-            const off = this.randomSpot();
-            this.walkTo(a, { x: (spot.x * 2 + off.x) / 3, y: (spot.y * 2 + off.y) / 3 });
+            this.walkTo(a, this.nearSpot(spot));
             a.returnTo = spot;
           }
         }
@@ -397,7 +456,7 @@ export class ForestView {
             a.wait = 1.5 + this.rng.next() * 4;
           }
         } else {
-          const sp = MAX_SPEED * Math.min(1, d / SLOW_RADIUS);
+          const sp = MAX_SPEED * (d > 90 ? 2.2 : 1) * Math.min(1, d / SLOW_RADIUS); // hurry on long trips between clearings
           desiredX = (dx / d) * sp;
           desiredY = (dy / d) * sp;
         }
@@ -431,38 +490,69 @@ export class ForestView {
   }
 
   // ------------------------------------------------------------- drawing
-  decorFor(areaId) {
-    if (this.decor.has(areaId)) return this.decor.get(areaId);
-    const rng = makeRng(hash('decor', areaId));
+  /** Trees and undergrowth filling the empty cells around the forest's clearings. */
+  woods() {
+    const areas = Object.values(this.app.state.world.areas);
+    const sig = areas.map((a) => a.cx + ',' + a.cy).sort().join(';');
+    if (this.woodsSig === sig) return this.woodsCache;
+    const occ = new Set(areas.map((a) => a.cx + ',' + a.cy));
+    const cells = new Set();
+    for (const a of areas) for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+      const k = (a.cx + dx) + ',' + (a.cy + dy);
+      if (!occ.has(k)) cells.add(k);
+    }
     const small = ['bush', 'fern', 'flowers', 'stones', 'log', 'fern', 'flowers'];
     const out = [];
-    const R = 260; // the woods extend this far past the area
-    for (let i = 0; out.length < 230 && i < 3000; i++) {
-      const x = -R + rng.next() * (LW + 2 * R);
-      const y = -R + rng.next() * (LH + 2 * R);
-      // keep the area itself clear, with a little breathing room around it
-      if (x > -TILE * 1.5 && x < LW + 4 && y > -TILE * 2 && y < LH + 4) continue;
-      // trees thicken with distance from the clearing
-      const dist = Math.max(-x, x - LW, -y, y - LH, 0);
-      const treeChance = Math.min(0.75, 0.15 + dist / 140);
-      const kind = rng.chance(treeChance) ? (rng.chance(0.5) ? 'tree' : 'pine') : rng.pick(small);
-      out.push({ x: Math.round(x), y: Math.round(y), kind });
+    for (const k of cells) {
+      const [cx, cy] = k.split(',').map(Number);
+      const rng = makeRng(hash('woods', k));
+      const near = { n: occ.has(cx + ',' + (cy - 1)), s: occ.has(cx + ',' + (cy + 1)), w: occ.has((cx - 1) + ',' + cy), e: occ.has((cx + 1) + ',' + cy) };
+      const touching = near.n || near.s || near.w || near.e;
+      for (let i = 0; i < 26; i++) {
+        const lx = rng.next() * LW;
+        const ly = rng.next() * LH;
+        // leave room at edges that face a clearing (and its signpost)
+        if ((near.n && ly < 26) || (near.s && ly > LH - 12) || (near.w && lx < 14) || (near.e && lx > LW - 22)) continue;
+        if (touching && Math.hypot(lx - LW / 2, ly - LH / 2) < 30) { /* centre of an open cell: keep mixed */ }
+        const treeChance = touching ? 0.4 : 0.7;
+        const kind = rng.chance(treeChance) ? (rng.chance(0.5) ? 'tree' : 'pine') : rng.pick(small);
+        out.push({ x: Math.round(cx * LW + lx), y: Math.round(cy * LH + ly), kind });
+      }
     }
-    this.decor.set(areaId, out);
+    this.woodsSig = sig;
+    this.woodsCache = out;
     return out;
+  }
+
+  terrainFor(id, area, t, rm) {
+    let c = this.terrainCaches.get(id);
+    if (!c) {
+      c = { key: null, canvas: document.createElement('canvas') };
+      c.canvas.width = LW;
+      c.canvas.height = LH;
+      this.terrainCaches.set(id, c);
+    }
+    const key = area.tiles.join('') + (rm ? 0 : Math.floor(t * 2));
+    if (c.key !== key) {
+      const tctx = c.canvas.getContext('2d');
+      tctx.clearRect(0, 0, LW, LH);
+      for (let y = 0; y < AREA_H; y++) for (let x = 0; x < AREA_W; x++) drawTile(tctx, area.tiles[y][x], x, y, rm ? 0 : t, 0, true);
+      c.key = key;
+    }
+    return c.canvas;
   }
 
   draw(t) {
     const s = this.app.state;
     const ctx = this.ctx;
-    const area = s.world.areas[this.areaId];
-    if (!area || !this.vw) return;
+    if (!this.vw) return;
     const rm = s.settings.reducedMotion;
     const c = this.cam;
     const k = c.zoom * this.dpr;
     const ox = (this.vw / 2 - c.x * c.zoom) * this.dpr;
     const oy = (this.vh / 2 - c.y * c.zoom) * this.dpr;
     const view = { x0: c.x - this.vw / (2 * c.zoom), y0: c.y - this.vh / (2 * c.zoom), w: this.vw / c.zoom, h: this.vh / c.zoom };
+    const inView = (x, y, pad = TILE * 2) => x > view.x0 - pad && x < view.x0 + view.w + pad && y > view.y0 - pad && y < view.y0 + view.h + pad;
 
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = '#4f7a38';
@@ -482,41 +572,48 @@ export class ForestView {
     }
     ctx.imageSmoothingEnabled = false;
 
-    // 2. terrain features (grass tiles transparent; cached; water animates at 2 fps)
-    const tkey = this.areaId + area.tiles.join('') + (rm ? 0 : Math.floor(t * 2));
-    if (this.terrainCache.key !== tkey) {
-      const tctx = this.terrainCache.canvas.getContext('2d');
-      tctx.clearRect(0, 0, LW, LH);
-      for (let y = 0; y < AREA_H; y++) for (let x = 0; x < AREA_W; x++) drawTile(tctx, area.tiles[y][x], x, y, rm ? 0 : t, 0, true);
-      this.terrainCache.key = tkey;
+    // 2. terrain of every clearing in view
+    const areas = this.areas();
+    for (const a of areas) {
+      if (a.ox > view.x0 + view.w || a.ox + LW < view.x0 || a.oy > view.y0 + view.h || a.oy + LH < view.y0) continue;
+      ctx.drawImage(this.terrainFor(a.id, a.area, t, rm), a.ox, a.oy);
     }
-    ctx.drawImage(this.terrainCache.canvas, 0, 0);
 
-    // 3. depth-sorted: forest beyond the area, structures, mushrooms
+    // 3. depth-sorted: woods, signposts, structures, mushrooms
     const items = [];
-    for (const d of this.decorFor(this.areaId)) {
-      if (d.x < view.x0 - TILE || d.x > view.x0 + view.w || d.y < view.y0 - TILE || d.y > view.y0 + view.h) continue;
-      items.push({ y: d.y + TILE, draw: () => drawArt(ctx, d.kind, d.x, d.y, rm ? 0 : t) });
+    for (const d of this.woods()) if (inView(d.x, d.y)) items.push({ y: d.y + TILE, draw: () => drawArt(ctx, d.kind, d.x, d.y, rm ? 0 : t) });
+    if (!this.postCache || t - this.postCache.t > 0.5) this.postCache = { t, posts: this.signposts() };
+    for (const sp of this.postCache.posts) if (inView(sp.x, sp.y)) items.push({ y: sp.y, draw: () => drawSignpost(ctx, sp, t, rm) });
+    for (const a of areas) {
+      for (const o of a.area.objects) {
+        if (!inView(a.ox + o.x * TILE, a.oy + o.y * TILE)) continue;
+        items.push({ y: a.oy + o.y * TILE + TILE, draw: () => { ctx.save(); ctx.translate(a.ox, a.oy); drawStructure(ctx, STRUCTURES[o.def], o.x, o.y, o.state, rm ? 0 : t); ctx.restore(); } });
+      }
     }
-    for (const o of area.objects) items.push({ y: o.y * TILE + TILE, draw: () => drawStructure(ctx, STRUCTURES[o.def], o.x, o.y, o.state, rm ? 0 : t) });
-    for (const a of this.agents.values()) items.push({ y: a.y, draw: () => this.drawAgent(ctx, a, t, rm) });
+    for (const ag of this.agents.values()) if (inView(ag.x, ag.y)) items.push({ y: ag.y, draw: () => this.drawAgent(ctx, ag, t, rm) });
     items.sort((p, q) => p.y - q.y);
     for (const it of items) it.draw();
 
-    // 4. build overlay
+    // 4. build overlay: tile grid on every clearing
     if (this.app.buildTool) {
       ctx.strokeStyle = 'rgba(255,255,255,0.22)';
       ctx.lineWidth = 1 / c.zoom;
-      for (let x = 0; x <= AREA_W; x++) { ctx.beginPath(); ctx.moveTo(x * TILE, 0); ctx.lineTo(x * TILE, LH); ctx.stroke(); }
-      for (let y = 0; y <= AREA_H; y++) { ctx.beginPath(); ctx.moveTo(0, y * TILE); ctx.lineTo(LW, y * TILE); ctx.stroke(); }
-      ctx.lineWidth = 2 / c.zoom;
-      if (this.hover && this.hover.x >= 0 && this.hover.y >= 0 && this.hover.x < AREA_W && this.hover.y < AREA_H) {
-        ctx.strokeStyle = '#ffd75e';
-        ctx.strokeRect(this.hover.x * TILE, this.hover.y * TILE, TILE, TILE);
+      for (const a of areas) {
+        for (let x = 0; x <= AREA_W; x++) { ctx.beginPath(); ctx.moveTo(a.ox + x * TILE, a.oy); ctx.lineTo(a.ox + x * TILE, a.oy + LH); ctx.stroke(); }
+        for (let y = 0; y <= AREA_H; y++) { ctx.beginPath(); ctx.moveTo(a.ox, a.oy + y * TILE); ctx.lineTo(a.ox + LW, a.oy + y * TILE); ctx.stroke(); }
       }
-      if (this.app.buildTool.kind === 'move') {
-        const o = area.objects.find((x) => x.id === this.app.buildTool.objectId);
-        if (o) { ctx.strokeStyle = '#8fd8ff'; ctx.strokeRect(o.x * TILE, o.y * TILE, TILE, TILE); }
+      ctx.lineWidth = 2 / c.zoom;
+      if (this.hover) {
+        const ht = this.tileAt(this.hover.wx, this.hover.wy);
+        if (ht) {
+          const o = this.areaOrigin(ht.areaId);
+          ctx.strokeStyle = '#ffd75e';
+          ctx.strokeRect(o.x + ht.x * TILE, o.y + ht.y * TILE, TILE, TILE);
+        }
+      }
+      if (this.app.buildTool.kind === 'move' && this.app.buildTool.objectId) {
+        const f = this.app.game.objectById(s, this.app.buildTool.objectId);
+        if (f) { const o = this.areaOrigin(f.areaId); ctx.strokeStyle = '#8fd8ff'; ctx.strokeRect(o.x + f.obj.x * TILE, o.y + f.obj.y * TILE, TILE, TILE); }
       }
     }
 
@@ -537,10 +634,11 @@ export class ForestView {
     // 6. time of day and weather, across the whole screen
     const cond = this.app.conditions;
     if (cond.phase === 'night' || cond.phase === 'dusk') {
-      for (let i = 0; i < 26; i++) {
-        const fx = -40 + ((i * 37) % (LW + 80)) + (rm ? 0 : Math.sin(t * 0.5 + i) * 10);
-        const fy = -30 + ((i * 53) % (LH + 60)) + (rm ? 0 : Math.cos(t * 0.7 + i * 2) * 6);
-        if (rm || Math.sin(t * 2 + i * 1.7) > 0.2) { ctx.fillStyle = 'rgba(230,255,140,0.9)'; ctx.fillRect(fx, fy, 1, 1); }
+      ctx.fillStyle = 'rgba(230,255,140,0.9)';
+      for (let i = 0; i < 40; i++) {
+        const fx = view.x0 + ((i * 97.3) % view.w) + (rm ? 0 : Math.sin(t * 0.5 + i) * 10);
+        const fy = view.y0 + ((i * 53.7) % view.h) + (rm ? 0 : Math.cos(t * 0.7 + i * 2) * 6);
+        if (rm || Math.sin(t * 2 + i * 1.7) > 0.2) ctx.fillRect(fx, fy, 1, 1);
       }
     }
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -591,6 +689,39 @@ export class ForestView {
       ctx.fillStyle = a.kind === 'guest' ? '#8fd8ff' : '#9ae07a';
       ctx.fillRect(a.x - 1.5, top - 6 + (rm ? 0 : Math.sin(t * 3)), 3, 3);
     }
+  }
+}
+
+/** A little wooden signpost pointing the way the forest could grow. */
+function drawSignpost(ctx, sp, t, rm) {
+  const x = sp.x;
+  const y = sp.y;
+  const bob = sp.ready && !rm ? Math.sin(t * 4) * 0.8 : 0;
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  ctx.fillRect(x - 4, y - 1, 8, 2);
+  ctx.fillStyle = '#5a3a1e';
+  ctx.fillRect(x - 1, y - 14, 2, 14);
+  if (sp.ready) {
+    ctx.fillStyle = `rgba(255,215,94,${rm ? 0.5 : 0.35 + 0.25 * Math.sin(t * 4)})`;
+    ctx.fillRect(x - 9, y - 22 + bob, 18, 11);
+  }
+  ctx.fillStyle = sp.ready ? '#e0b060' : '#b07a44';
+  ctx.fillRect(x - 7, y - 20 + bob, 14, 7);
+  ctx.fillStyle = '#5a3a1e';
+  ctx.fillRect(x - 7, y - 14 + bob, 14, 1);
+  // arrow
+  ctx.fillStyle = '#3a240e';
+  const ay = y - 17 + bob;
+  const dirs = { east: [1, 0], west: [-1, 0], north: [0, -1], south: [0, 1] };
+  const [dx, dy] = dirs[sp.dir];
+  if (dx) {
+    ctx.fillRect(x - 4, ay, 8, 1);
+    ctx.fillRect(x + 3 * dx, ay - 1, 1, 3);
+    ctx.fillRect(x + 2 * dx, ay - 2, 1, 5);
+  } else {
+    ctx.fillRect(x, ay - 2, 1, 5);
+    ctx.fillRect(x - 1, ay + 1 * dy, 3, 1);
+    ctx.fillRect(x - 2, ay + 0 * dy, 5, 1);
   }
 }
 

@@ -5,7 +5,7 @@ import { conditionsAt } from '../core/time.js';
 import { JOB_BY_ID, STRUCTURES } from '../content/world.js';
 import { h, fmt, resIcon, resName } from './common.js';
 import { ForestView } from '../render/forest.js';
-import { renderForest, objectPanel } from './screens/forest.js';
+import { renderForest, objectPanel, expandModal } from './screens/forest.js';
 import { renderMushrooms, mushroomDetail } from './screens/mushrooms.js';
 import { renderBreed } from './screens/breed.js';
 import { renderJobs } from './screens/jobs.js';
@@ -25,8 +25,9 @@ export class App {
   constructor(root) {
     this.root = root;
     this.screen = 'forest';
-    this.ui = { area: 'clearing', mushroomsTab: 'resident', sort: 'newest', breed: { a: null, b: null, picking: null }, guideTab: 'attributes', moreTab: 'inventory', jobOpen: null };
+    this.ui = { mushroomsTab: 'resident', sort: 'newest', breed: { a: null, b: null, picking: null }, guideTab: 'attributes', moreTab: 'inventory', jobOpen: null };
     this.buildTool = null;
+    this.game = G; // the forest view reads world helpers through this
     this.modalStack = [];
     this.lastSave = 0;
     this.devMode = new URLSearchParams(location.search).has('dev');
@@ -112,6 +113,7 @@ export class App {
 
   flushEvents() {
     const evs = G.takeEvents(this.state);
+    if (evs.length && this.main) this.render();
     for (const e of evs) {
       const big = e.type.startsWith('unlock') || e.type === 'discovery' || e.type === 'welcome';
       if (big && !this.state.tutorials[e.type + e.title]) {
@@ -266,6 +268,10 @@ export class App {
 
   onTapMushroom(uid) {
     this.openMushroom(uid);
+  }
+
+  onTapSignpost(areaId, dir) {
+    expandModal(this, areaId, dir);
   }
 
   onTapObject(id) {
