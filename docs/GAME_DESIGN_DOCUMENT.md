@@ -2,7 +2,7 @@
 
 ## A cozy breeding, collecting, and forest-life game
 
-**Game Design Document | Version 0.2 | November 2026**
+**Game Design Document | Version 0.3 | November 2026**
 
 > **Design direction:** Begin with three ordinary mushrooms. Breed them,
 > generation by generation, into prized specialists. Give them meaningful
@@ -19,6 +19,7 @@
 |---|---|---|
 | 0.1 | Nov 2026 | Initial design: forest, jobs, breeding, sharing, MVP scope. |
 | 0.2 | Nov 2026 | Expansion: three randomized starters; eight job stats; attribute-driven base stats; RGB colour stat budget; Advanced Traits; Perks; Mutations; stat caps; ordered breeding resolution; staged breeding unlocks; discovery-driven job unlocks; friend genetic donors; forest clock and weather; centralized configuration; anti-exploit rules; required test plan. Conflicts with v0.1 are resolved in place and listed in Appendix A. |
+| 0.3 | Nov 2026 | Owner decisions D-1 to D-15 applied (Appendix B): Rare attributes slightly stronger; Perks, Mutations and Weather/Time promoted to MVP Must-have; day/night follows real local time; one free breeding, then the soft currency **Glimmer**; development stages strictly linear in the listed order; balance simulation of 20+ generations required before probabilities are locked. |
 
 ### 0.2 Conventions
 
@@ -109,7 +110,7 @@ server-authoritative trades are future backend features.
 | Hosting | GitHub Pages static hosting, deployable from a repository subpath. |
 | Runtime | Client-side HTML/CSS/JavaScript or the project's existing framework. No backend for the MVP. |
 | Persistence | Local save in browser storage (prefer IndexedDB for structured data; localStorage is acceptable for a small prototype). |
-| Offline progress | Save a timestamp and calculate elapsed production on return. Clamp unreasonable elapsed time; prevent negative or duplicate rewards (Section 13.3). |
+| Offline progress | Save a timestamp and calculate elapsed production on return. Clamp unreasonable elapsed time; prevent negative or duplicate rewards (Section 13.4). |
 | Determinism | All gameplay randomness (breeding, chance-based perks, weather, discoveries) uses seeded RNG so results are reproducible and refresh-safe (Section 20). |
 | Social sharing | MVP: export/import a mushroom as a compact JSON file or encoded share code. Validate imported data, recalculate all derived values, assign a new local instance ID, and preserve lineage/genetics (Section 14). |
 | Multiplayer limitation | GitHub Pages alone cannot securely store shared accounts, synchronize forests, or validate online trades. Real-time visits/trading are later backend features. |
@@ -190,36 +191,44 @@ produce exactly the same results as animated ones.
 
 ### 5.5 Forest time and weather (new)
 
-Perks and Mutations reference time of day and weather, so the forest has
-a deterministic clock.
+Perks and Mutations reference time of day and weather, so the forest
+follows the **player's real local time** (decision D-10).
 
-- **Forest day:** one forest day lasts Config: `forestDayLengthMinutes`
-  (default 48 real minutes), split into **Dawn** (6), **Day** (24),
-  **Dusk** (6), and **Night** (12). Phase lengths are configurable.
-- **Clock anchor:** the forest clock is derived from elapsed real time
-  since the save's `worldEpoch`, so any timestamp maps to exactly one
-  phase. Offline resolution uses the same mapping.
-- **Weather:** each forest day has seeded weather derived from
-  `hash(worldSeed, forestDayIndex)`: Clear, Cloudy, or Rain
-  (Config: `weatherWeights`, default 65 / 20 / 15). Rain occupies a
-  seeded window within the day.
+- **Day phases:** the device's local clock maps every timestamp to one
+  phase (Config: `dayPhaseHours`): **Dawn** 05:00–08:00, **Day**
+  08:00–18:00, **Dusk** 18:00–21:00, **Night** 21:00–05:00.
+- **Weather:** each local calendar date has seeded weather derived from
+  `hash(worldSeed, localDate)`: Clear, Cloudy, or Rain
+  (Config: `weatherWeights`, default 65 / 20 / 15). Rain occupies one or
+  two seeded windows of 1–3 hours that day (Config: `rainWindows`).
+  Weather is game weather, not a real forecast, and needs no network.
+- **Offline resolution** applies the same mapping to every cycle in the
+  elapsed window, so a player who closes the game in the evening still
+  receives Night Shift and Morning Dew results for the night and dawn
+  that passed while they were away. Time-conditional Perks are therefore
+  useful for every play schedule.
+- **Time zones:** phase mapping uses the device's current time-zone
+  offset at resolution time. A time-zone change only affects cycles not
+  yet resolved.
 - **Presentation:** day/night tinting, rain overlay, fireflies at night.
   Visuals never decide gameplay; they read from the simulation.
-- Real-world local time is not used for gameplay, so players who only
-  play in the evening still experience dawn and rain.
+- *Labelled limitation:* a player can change the device clock or time
+  zone to force "Night" or "Dawn". Gains are small (time Perks are
+  capped by `productivityBonusCap`) and offline time remains clamped
+  (Section 13.4).
 
 ### 5.6 Wild Visitors (clarifies v0.1 "attract and discover mushrooms")
 
 Suitable habitats occasionally attract a **Wild Visitor** mushroom.
 
-- Wild Visitors appear for a limited time (Config: `wildVisitorStayDays`,
-  default 1 forest day) at a habitat that matches their requirements.
+- Wild Visitors appear for a limited time (Config: `wildVisitorStayHours`,
+  default 12 hours) at a habitat that matches their requirements.
 - They carry only ordinary attributes, possibly including Uncommon
   attributes tied to that habitat. They never carry Advanced Traits,
   Perks, or Mutations.
 - They can be used as one parent in a breeding while present. They
-  cannot be assigned to jobs and do not join the collection in the MVP
-  (pending decision D-9).
+  cannot be assigned to jobs and never join the collection; they are
+  breeding partners only (decision D-9).
 - Their purpose is to widen the ordinary gene pool and reward habitat
   building, without bypassing breeding progression.
 
@@ -278,10 +287,14 @@ Every ordinary attribute has a tier: **Basic**, **Uncommon**, or
   variation during breeding, and friend donors.
 - **Rare** attributes enter through attribute variation once a rare
   habitat has been discovered, and through friend donors.
-- **Tier never changes an attribute's stat budget** (Section 7.2).
-  Rare attributes are rarer, more striking visually, and sometimes more
-  focused in distribution, but never strictly stronger. This keeps
-  common mushrooms useful.
+- **Basic and Uncommon attributes share the same category budget.**
+  **Rare attributes are slightly stronger:** each spends its category
+  budget plus Config: `rareTierBudgetBonus` (default +2) (decision D-1).
+  Rare attributes are also more striking visually and often more
+  focused. The bonus is deliberately small: a mushroom with Rare
+  attributes in all five non-colour categories gains +10 total points
+  (76 vs 66), roughly the value of 2–3 Advanced Traits, so common
+  mushrooms stay useful and specialization still matters more than tier.
 
 ### 6.5 Temperament
 
@@ -301,8 +314,8 @@ make a mushroom unusable.
   attribute variation when this mushroom is a parent; occasional harmless
   surprise outcomes at work.
 - **Gentle:** improves nearby plant growth or visitor comfort by 5%.
-- **Stubborn:** +8% productivity in a job held for at least one forest
-  day; the bonus resets on reassignment (no penalty below baseline).
+- **Stubborn:** +8% productivity in a job held for at least 12 hours
+  (Config); the bonus resets on reassignment (no penalty below baseline).
 
 Temperament modifiers count toward the productivity bonus cap
 (Section 11.3). All values are Config.
@@ -342,7 +355,7 @@ Every new player receives **exactly three** randomized mushrooms.
 - Colour RGB is drawn from the Basic starter palette (Section 7.4.5).
 - No Advanced Traits, no Perks, no Mutation.
 - Generation 1, no parents, origin "Starter".
-- Every ordinary mushroom has the same base stat total (66; Section
+- Every all-Basic mushroom has the same base stat total (66; Section
   7.2), so random luck cannot produce an exceptionally powerful starter.
 - No single starter stat may exceed Config: `starterMaxStat`
   (default 28).
@@ -375,9 +388,9 @@ consumes parents; both remain permanently in the collection.
   Archive**: unlimited dormant storage. Archived mushrooms cannot work
   but can be viewed, bred, exported, and moved back to residency when
   space allows.
-- A mushroom is never removed automatically. Optional "Return to the
-  Wild" release requires a two-step confirmation and is excluded from
-  the MVP unless approved (decision D-8).
+- A mushroom is never removed automatically, and there is no way to
+  release or delete a mushroom in the MVP (decision D-8). Releasing
+  ("Return to the Wild") may be reconsidered post-MVP.
 
 ---
 
@@ -407,24 +420,26 @@ distribution. The same attribute always contributes the same
 distribution on every mushroom, in every save, forever (for a given
 configuration version).
 
-Each attribute **category** has a fixed point budget, and every
-attribute in a category spends exactly that budget:
+Each attribute **category** has a fixed point budget. Every Basic and
+Uncommon attribute in a category spends exactly that budget; every Rare
+attribute spends the budget + `rareTierBudgetBonus` (+2):
 
-| Category | Budget | Notes |
-|---|---|---|
-| Cap shape | 18 | Largest single influence on silhouette and profile. |
-| Cap colour | 12 | Distributed by RGB (Section 7.4). |
-| Stem | 12 | |
-| Markings | 10 | "Plain" is a full attribute with its own distribution. |
-| Gills / underside | 8 | |
-| Ordinary glow | 6 | "None" is a full attribute with its own distribution. |
-| **Total base** | **66** | Identical for every ordinary mushroom. |
+| Category | Budget | Rare budget | Notes |
+|---|---|---|---|
+| Cap shape | 18 | 20 | Largest single influence on silhouette and profile. |
+| Cap colour | 12 | — | Distributed by RGB (Section 7.4). Colour has no tier and is always exactly 12. |
+| Stem | 12 | 14 | |
+| Markings | 10 | 12 | "Plain" is a full attribute with its own distribution. |
+| Gills / underside | 8 | 10 | |
+| Ordinary glow | 6 | 8 | "None" is a full attribute with its own distribution. |
+| **Total base** | **66** | **up to 76** | 66 for any mushroom with no Rare attributes; +2 per Rare attribute. |
 
 Consequences:
 
-- Ordinary mushrooms differ in **shape** of their stat profile, never in
-  total base power. Power growth comes only from Advanced Traits and
-  Mutations.
+- Mushrooms without Rare attributes differ only in the **shape** of
+  their stat profile, never in total base power. Rare attributes add a
+  small amount (+2 each); real power growth comes from Advanced Traits
+  and Mutations.
 - Adding a future attribute category means adding a new budget; existing
   mushrooms gain that category through migration with a defined default
   attribute.
@@ -438,7 +453,10 @@ all of the mushroom's ordinary attributes.
 
 All values are Config. Unlisted stats are 0.
 
-**Cap shape (budget 18)**
+Tables are approved as the starting point (decision D-2); Rare rows
+include the +2 Rare bonus.
+
+**Cap shape (budget 18; Rare 20)**
 
 | Attribute | Tier | CUL | MYC | FOR | CON | MAG | ANI | DIS | SOC |
 |---|---|---|---|---|---|---|---|---|---|
@@ -450,10 +468,10 @@ All values are Config. Unlisted stats are 0.
 | Clustercap | Basic | 4 | 6 | | | | | | 8 |
 | Shelfcap | Uncommon | | | 6 | 8 | | 4 | | |
 | Frillcap | Uncommon | 6 | | | | | 4 | | 8 |
-| Lanterncap | Rare | | | | | 10 | 3 | | 5 |
-| Spirecap | Rare | | | | | 8 | | 10 | |
+| Lanterncap | Rare | | | | | 11 | 3 | | 6 |
+| Spirecap | Rare | | | | | 9 | | 11 | |
 
-**Stem (budget 12)**
+**Stem (budget 12; Rare 14)**
 
 | Attribute | Tier | CUL | MYC | FOR | CON | MAG | ANI | DIS | SOC |
 |---|---|---|---|---|---|---|---|---|---|
@@ -463,9 +481,9 @@ All values are Config. Unlisted stats are 0.
 | Rooted | Basic | 4 | 2 | | | | | 6 | |
 | Ringed | Uncommon | | | | 2 | | 4 | | 6 |
 | Twisted | Uncommon | | | | | 6 | | 2 | 4 |
-| Crystal-veined | Rare | | | | 5 | 7 | | | |
+| Crystal-veined | Rare | | | | 6 | 8 | | | |
 
-**Markings (budget 10)**
+**Markings (budget 10; Rare 12)**
 
 | Attribute | Tier | CUL | MYC | FOR | CON | MAG | ANI | DIS | SOC |
 |---|---|---|---|---|---|---|---|---|---|
@@ -475,9 +493,9 @@ All values are Config. Unlisted stats are 0.
 | Speckles | Basic | 2 | 5 | | | | | 3 | |
 | Rings | Uncommon | | 3 | | | 5 | | | 2 |
 | Patches | Uncommon | 3 | | | | | 2 | | 5 |
-| Constellation | Rare | | | | | 6 | | 4 | |
+| Constellation | Rare | | | | | 7 | | 5 | |
 
-**Gills / underside (budget 8)**
+**Gills / underside (budget 8; Rare 10)**
 
 | Attribute | Tier | CUL | MYC | FOR | CON | MAG | ANI | DIS | SOC |
 |---|---|---|---|---|---|---|---|---|---|
@@ -486,9 +504,9 @@ All values are Config. Unlisted stats are 0.
 | Pored | Basic | | | 4 | 4 | | | | |
 | Ridged | Uncommon | | | | 4 | 2 | | 2 | |
 | Toothed | Uncommon | | | 2 | | | | 4 | 2 |
-| Velvet | Rare | | | | | | 4 | | 4 |
+| Velvet | Rare | | | | | | 5 | | 5 |
 
-**Ordinary glow (budget 6)** — distinct from Mutation glow effects.
+**Ordinary glow (budget 6; Rare 8)** — distinct from Mutation glow effects.
 
 | Attribute | Tier | CUL | MYC | FOR | CON | MAG | ANI | DIS | SOC |
 |---|---|---|---|---|---|---|---|---|---|
@@ -496,7 +514,7 @@ All values are Config. Unlisted stats are 0.
 | Faint | Basic | | | | | 3 | | | 3 |
 | Soft | Uncommon | | | | | 4 | 2 | | |
 | Pulse | Uncommon | | | | | 2 | | 4 | |
-| Radiant | Rare | | | | | 6 | | | |
+| Radiant | Rare | | | | | 8 | | | |
 
 The Basic pool (6 × 4 × 4 × 3 × 2 shapes/stems/markings/gills/glows,
 times colour) far exceeds the MVP requirement of 12 visual combinations.
@@ -635,8 +653,9 @@ traits (+8) would raise Construction to 35.
 
 With the initial tables:
 
-- Every ordinary mushroom: base total 66; typical single stats 0–28;
-  the theoretical maximum single base stat is roughly 40.
+- Ordinary mushrooms: base total 66 (up to 76 with five Rare
+  attributes); typical single stats 0–28; the theoretical maximum single
+  base stat is roughly 40 (about 45 with Rare attributes).
 - Advanced Traits: up to 8 × 4 = +32.
 - Mutation: up to +18 on one stat.
 - A deeply line-bred specialist can therefore approach 90+ in one stat,
@@ -661,9 +680,9 @@ through breeding.
 
 - Starters cannot have Advanced Traits.
 - Each breeding can introduce **at most one** new Advanced Trait.
-- A new trait targets one stat chosen uniformly at random
-  (Config: `advancedTraitStatWeighting`, default uniform) from **eligible
-  stats**: stats where the offspring's current value (ordinary
+- A new trait targets one stat chosen **uniformly at random**
+  (decision D-3; Config: `advancedTraitStatWeighting`, default uniform)
+  from **eligible stats**: stats where the offspring's current value (ordinary
   attributes + already-inherited traits) + 4 ≤ the stat cap. If no stat
   is eligible, no new trait is created.
 - Traits are inherited by later generations (Section 9.4.3).
@@ -980,11 +999,17 @@ every bonus from both parents.
 
 ### 9.7 Breeding cost
 
-Breeding costs a small amount of resources (Config: `breedingCost`,
-default 3 berries + 2 leaves; spores are added after the First Fungal
-Patch). The first three breedings are free (Config:
-`freeBreedingCount`) so the first-session loop stays fast. Costs are
-deducted in the same save transaction that creates the breeding record.
+- The player's **first breeding is free** (Config: `freeBreedingCount`,
+  default 1) (decision D-14).
+- Every later breeding costs **Glimmer**, the game's soft currency
+  (Section 13.2), Config: `breedingCostGlimmer` (default 15). The cost is
+  the same whether the partner is owned, a Guest, or a Wild Visitor.
+- The cost does not rise with generation or rarity, so breeding prized
+  mushrooms is never penalized. Station upgrades MAY add a small
+  discount (Config).
+- Glimmer is deducted in the same save transaction that creates the
+  breeding record. If the player cannot afford a breeding, the button
+  shows the shortfall and how to earn Glimmer.
 
 ### 9.8 Breeding goals
 
@@ -1020,7 +1045,7 @@ Guide entry and a brief tutorial (Section 16).
 | First Breed | Available from the start (Breeding Nook in the Starting Clearing). | Ordinary attribute inheritance, parent/offspring comparison, lineage records. |
 | Early Breeding Milestone | 2 completed breedings. | Advanced Traits: offspring can develop permanent +4 stat bonuses. First trait guaranteed (Section 9.4.3). |
 | Breeding Workstation Upgrade | Upgrade Breeding Nook → **Spore Cradle** (requires Woodland Workshop; costs planks + spores). | Perks: conditional productivity bonuses. +1 incubation slot. |
-| Rare Habitat or Special Milestone | Discover the **Moonstone Ring** rare habitat (found by Excavator or Night Watcher in the Root Hollow) **or** own a Generation 5 mushroom, whichever comes first. | Mutations: rare visual and gameplay transformations. Also enables Rare-tier attribute variation. |
+| Rare Habitat or Special Milestone | Discover the **Moonstone Ring** rare habitat (found by Excavator or Night Watcher in the Root Hollow) **or** own a Generation 5 mushroom, whichever comes first (approved, decision D-5). | Mutations: rare visual and gameplay transformations. Also enables Rare-tier attribute variation. |
 | Later Generations | Own a Generation 6 mushroom and craft the **Spore Lens**. | Breeding insight tools (10.4). |
 
 ### 10.2 Breeding Station upgrades
@@ -1044,7 +1069,7 @@ Perk before the player has the Spore Cradle):
 - Dormant entries activate permanently when the system unlocks.
 
 This keeps donors valuable for new players and creates a motivation to
-progress, without granting immediate power (decision D-4).
+progress, without granting immediate power (approved, decision D-4).
 
 ### 10.4 Breeding insight tools
 
@@ -1121,7 +1146,8 @@ OutputPerCycle = BaseOutput × Effectiveness × (1 + BonusSum) × HabitatMultipl
 ```
 
 - Config: `jobScoreWeights` (0.7 / 0.3), `effectivenessCurve`,
-  `productivityBonusCap` (default +60%).
+  `productivityBonusCap` (default +60%). The curve stays a straight line
+  for now (decision D-11) and may be revisited after playtesting.
 - Chance-based effects (bonus finds, extra dew, material conservation)
   roll per cycle using seed `hash(worldSeed, mushroomUid, jobId,
   cycleIndex)`, so live and offline results are reproducible.
@@ -1163,18 +1189,25 @@ are met; this is enforced in game logic.
 
 | Stage | Discovery trigger (initial) | Construct / restore | Unlocks |
 |---|---|---|---|
-| **Starting Clearing** | Available at start: garden beds, wild plants, leaf litter, Breeding Nook. | — | Gardener, Forager, Breeding |
-| **First Fungal Patch** | Foraging leaf litter reveals a damp fallen log (after Config: N forage cycles). | Restore Spore Bed (twigs + compost-starter) | Mycologist; spores enter breeding costs |
-| **Woodland Workshop** | Clearing a fallen-log path reveals an old workshop. | Restore Workbench (twigs + bark + stones) | Woodworker, Builder; Spore Cradle upgrade becomes buildable |
-| **Pond or Creek** | Builder repairs the creek path (requires planks). | Dew Reeds, Water Barrel, Reed Nest | Dew Collector, Waterer, Nest Tender |
-| **Root Hollow** | Found behind the workshop after a Builder project. | Dig Site, Lookout Stump | Excavator, Night Watcher; rare habitat discovery |
-| **Community Clearing** | Found by building a path from the clearing. | Gathering Circle, Gift Table, Mushroom Homes | Festival Helper, Gift Maker; extra resident capacity |
-| **Enchanted Landmark** | Requires two of {Pond, Root Hollow, Community} and glow traces found by Night Watcher. | Restore Shrine; grow Moonlit Grove | Enchanter, Spirit Keeper; Moonlit Cradle |
+Stages unlock **strictly in this order** (decision D-15); each stage's
+discovery requires the previous stage to be completed.
 
-**Branching:** after the Woodland Workshop, the Pond/Creek, Root Hollow,
-and Community Clearing can be developed in any order, so players with
-Blue-leaning (Local Discovery / Social Craft) mushrooms have an early
-goal. The Enchanted Landmark comes after two of the three.
+| # | Stage | Discovery trigger (initial) | Construct / restore | Unlocks |
+|---|---|---|---|---|
+| 1 | **Starting Clearing** | Available at start: garden beds, wild plants, leaf litter, Breeding Nook, Trading Stump. | — | Gardener, Forager, Breeding |
+| 2 | **First Fungal Patch** | Foraging leaf litter reveals a damp fallen log (after Config: N forage cycles). | Restore Spore Bed (twigs + leaves) | Mycologist |
+| 3 | **Woodland Workshop** | Clearing a fallen-log path (Mycologist decomposes it) reveals an old workshop. | Restore Workbench (twigs + bark + stones) | Woodworker, Builder; basic Mushroom Homes and Spore Cradle become buildable |
+| 4 | **Pond or Creek** | Builder repairs the creek path (requires planks). | Dew Reeds, Water Barrel, Reed Nest | Dew Collector, Waterer, Nest Tender |
+| 5 | **Root Hollow** | Exposed when creek water recedes from an old root bank. | Dig Site, Lookout Stump | Excavator, Night Watcher; rare habitat discovery (Moonstone Ring) |
+| 6 | **Enchanted Landmark** | Glow traces found by Night Watcher lead to an overgrown shrine. | Restore Shrine; grow Moonlit Grove | Enchanter, Spirit Keeper; Moonlit Cradle |
+| 7 | **Community Clearing** | Spirit Keeper's visitors reveal a hidden gathering place. | Gathering Circle, Gift Table, Cozy Homes | Festival Helper, Gift Maker; festival decorations; larger homes |
+
+**Keeping every stat useful in a linear order:** Local Discovery and
+Social Craft jobs arrive late (stages 5 and 7), so both stats are used
+as secondary stats earlier: Forager uses Local Discovery (stage 1) and
+Builder uses Social Craft (stage 3). Basic Mushroom Homes are buildable
+from the Workshop so resident capacity can grow long before the
+Community Clearing.
 
 ### 12.2 Rare habitats
 
@@ -1196,12 +1229,38 @@ entries. New areas must be addable through data files.
 
 | Category | Examples | Uses |
 |---|---|---|
-| Natural | Twigs, bark, stones, leaves, berries, nuts, seeds, dew, clay | Planting, building, breeding costs, food |
-| Fungal | Spores, rare spores, compost, mycelium threads | Breeding costs, fungal cultivation, soil upgrades, station upgrades |
+| Natural | Twigs, bark, stones, leaves, berries, nuts, seeds, dew, clay | Planting, building, trading for Glimmer, food |
+| Fungal | Spores, rare spores, compost, mycelium threads | Fungal cultivation, soil upgrades, station upgrades |
 | Magical | Glow dust, moonlight, spirit dew, stardust, crystal fragments | Enchantment, rare habitats, insight tools, advanced structures |
 | Crafted | Planks, woven fiber, polished stone, charms, gifts, decorations | Buildings, workstations, decorations, upgrades, consumables |
+| Currency | **Glimmer** (soft currency) | Breeding costs; minor purchases at the Trading Stump |
 
-### 13.2 Progression
+### 13.2 Glimmer (soft currency)
+
+Glimmer is the forest's in-game currency (decision D-14). It is earned
+only through play and can never be bought; there is no premium currency.
+
+- **Earning:**
+  - Every completed work cycle yields a small amount of Glimmer
+    (Config: `glimmerPerCycle`, default 1, multiplied by Effectiveness and
+    rounded down with a seeded remainder roll).
+  - Surplus resources can be traded for Glimmer at the **Trading Stump**
+    in the Starting Clearing (Config: `tradeRates`, with a daily limit
+    per resource, Config: `tradeDailyLimit`, so trading is a top-up, not
+    the main source).
+  - Milestones and Field Guide discoveries award one-time Glimmer.
+- **Spending:** breeding (Section 9.7) and small Trading Stump items
+  (seeds, decorations). Buildings and upgrades cost materials, not
+  Glimmer, so forest development stays tied to work.
+- **Starting balance:** Config: `startingGlimmer` (default 0). With
+  default rates, two to three starter workers earn a breeding's cost in
+  roughly 10–15 minutes of play.
+- **Safety:** imports, Guests, and Wild Visitors never grant Glimmer.
+  Glimmer is stored as an integer, cannot go negative, and is earned per
+  resolved cycle so offline earnings follow the same duplicate rules as
+  resources.
+
+### 13.3 Progression
 
 - Start with a small clearing, three starter mushrooms, a basic garden,
   the Breeding Nook, and two jobs.
@@ -1216,7 +1275,7 @@ entries. New areas must be addable through data files.
 - Long-term collection milestones and cosmetic goals ensure progression
   is not only about producing more resources.
 
-### 13.3 Offline progress
+### 13.4 Offline progress
 
 - On load, compute `elapsed = now − lastSeenAt`, clamped to
   `[0, offlineCap]` (Config: `offlineCapHours`, default 8).
@@ -1224,7 +1283,7 @@ entries. New areas must be addable through data files.
   `lastSeenAt` unchanged.
 - Resolve job cycles, plant growth, incubation, and Wild Visitor arrivals
   over the elapsed window. For performance, resolution MAY aggregate
-  cycles per forest-clock segment (phase × weather), but must produce
+  cycles per time segment (day phase × weather), but must produce
   deterministic results.
 - Each job assignment keeps a `lastResolvedCycle` cursor; cycles at or
   before the cursor are never granted again.
@@ -1333,7 +1392,7 @@ breeding system.
 
 | Screen | Key contents |
 |---|---|
-| Forest | Main scene: terrain, plants, structures, visible mushrooms, clock/weather indicator, resource summary, navigation. |
+| Forest | Main scene: terrain, plants, structures, visible mushrooms, local-time/weather indicator, Glimmer balance, resource summary, navigation. |
 | Mushroom Detail | See 15.2. |
 | Collection | Owned residents, Archive, Guests; filters by affinity, rarity, generation, job, trait, Perk, Mutation. |
 | Field Guide | See Section 16. |
@@ -1375,7 +1434,8 @@ breeding system.
   marked "may be inherited"; shared Perks marked "may combine"; Mutation
   status ("may inherit" / "rare spontaneous chance"). No exact outcome
   and, before the Spore Lens, no exact percentages.
-- Cost, incubation time, and slot availability; **Begin Breeding**.
+- Glimmer cost (or "Free" for the first breeding), incubation time, and
+  slot availability; **Begin Breeding**.
 - Incubation view: spore cluster at the station with countdown.
 - Reveal sequence: attributes first, then new trait/Perk/Mutation
   highlights with distinct celebratory effects.
@@ -1471,7 +1531,7 @@ simulation logic.
 | ResourceStack | resourceId, quantity |
 | BreedingRecord | id, parentAUid, parentBUid, parentSnapshots, startedAt, completesAt, outcomeSeed, breedingCounter, configVersion, sealedOffspring, state (incubating / ready / claimed), claimedAt |
 | GuestRecord | mushroomUid, shareId, importedAt, sourceForestName |
-| PlayerSave | schemaVersion, configVersion, localPlayerId, forestName, createdAt, lastSeenAt, worldEpoch, worldSeed, rngRoot, breedingCounter, world, mushrooms, guests, breedingRecords, inventory, discoveries, unlocks, fieldGuide, settings |
+| PlayerSave | schemaVersion, configVersion, localPlayerId, forestName, createdAt, lastSeenAt, lastTimezoneOffset, worldSeed, rngRoot, breedingCounter, breedingsCompleted, glimmer, tradeLimitsByDate, world, mushrooms, guests, breedingRecords, inventory, discoveries, unlocks, fieldGuide, settings |
 
 ### 18.3 Share record (export format)
 
@@ -1492,16 +1552,17 @@ groups and keys:
 
 | Group | Keys (defaults) |
 |---|---|
-| Stats | `statCap` 100; category budgets (18/12/12/10/8/6); `colorBudget` 12; `colorZeroFallback` (1,1,1); attribute contribution tables |
+| Stats | `statCap` 100; category budgets (18/12/12/10/8/6); `rareTierBudgetBonus` 2; `colorBudget` 12; `colorZeroFallback` (1,1,1); attribute contribution tables |
 | Starters | `starterCount` 3; `starterMaxStat` 28; `starterMaxAttempts` 500; `starterPalette`; curated fallback set |
 | Advanced Traits | `advancedTraitBonus` 4; `maxAdvancedTraits` 8; `newAdvancedTraitChance` 0.25; `traitInheritChanceSingle` 0.5; `traitInheritChanceShared` 0.75; `advancedTraitStatWeighting` uniform; `tutorialGuaranteedFirstTrait` true |
 | Perks | `maxPerks` 3; `newPerkChance` 0.08; `perkInheritChanceSingle` 0.5; `perkInheritChanceShared` 0.9; combine-rule chances; `newPerkAffinityWeight` 0.6; perk level tables |
 | Mutations | `maxMutations` 1; `spontaneousMutationChance` 0.0075; `mutationInheritChanceSingle` 0.35; `mutationInheritChanceBoth` 0.6; `mutationWeights`; mutation bonuses |
 | Inheritance | `attributeParentWeight` 0.5; `attributeVariationChance` 0.06; `rareVariationShare` 0.2; `firstBreedVariationEnabled` false; `colorBlendRange` [0.3,0.7]; `colorJitter` 12; `colorVariationHueShift` 30; `temperamentInheritance` |
-| Breeding | `incubationMinutes` 3; `parentRestMinutes` 10; `offspringMaturationMinutes` 0; `breedingCost`; `freeBreedingCount` 3; station slots and speed modifiers |
+| Breeding | `incubationMinutes` 3; `parentRestMinutes` 10; `offspringMaturationMinutes` 0; `freeBreedingCount` 1; `breedingCostGlimmer` 15; station slots, speed modifiers and discounts |
+| Economy | `startingGlimmer` 0; `glimmerPerCycle` 1; `tradeRates`; `tradeDailyLimit`; milestone rewards |
 | Unlocks | milestone triggers (Section 10.1), area discovery triggers (Section 12.1) |
 | Jobs | `jobScoreWeights` 0.7/0.3; `effectivenessCurve`; `productivityBonusCap` 0.6; job durations and outputs; temperament values |
-| World | `forestDayLengthMinutes` 48; phase lengths; `weatherWeights` 65/20/15; `wildVisitorStayDays` 1; `visibleMushroomCap` 10; `baseResidentCap` 8; `homeCapacity` 2 |
+| World | `dayPhaseHours` (Dawn 5–8, Day 8–18, Dusk 18–21, Night 21–5); `weatherWeights` 65/20/15; `rainWindows`; `wildVisitorStayHours` 12; `visibleMushroomCap` 10; `baseResidentCap` 8; `homeCapacity` 2 |
 | Offline | `offlineCapHours` 8 |
 | Rarity | point values and tier thresholds (Section 6.6) |
 | Sharing | `maxSharePayloadBytes` 4096; `guestCap` 10; name length 24 |
@@ -1525,7 +1586,9 @@ through one accessor so tests can inject alternative values.
   one atomic save transaction that also adds the offspring; a claimed
   record can never produce another offspring.
 - **No duplicate production:** per-assignment `lastResolvedCycle`
-  cursors.
+  cursors, covering resources and Glimmer.
+- **Currency integrity:** Glimmer is an integer that cannot go negative;
+  spending and the action it pays for happen in one save transaction.
 - **Logic-level caps:** stat cap, trait cap, Perk cap, Mutation cap,
   productivity bonus cap, and Perk max levels are enforced in the
   simulation and on every load and import, not just in the UI.
@@ -1586,10 +1649,39 @@ configuration and seeds.
 | 15 | Invalid imports cannot grant illegal bonuses | Fuzzed and hand-crafted payloads (9 traits, bonus 5, unknown IDs, level > max, implausible generation, injected stats/resources, oversized strings) are rejected or recalculated; save unchanged on rejection. |
 | 16 | Jobs stay locked until discovery and construction | Each job unavailable until both its discovery flag and workstation completion are true; assignment API rejects locked jobs. |
 
-### 22.2 Additional recommended tests
+### 22.2 Balance simulation (required before locking probabilities)
 
-- Every ordinary mushroom's base stat total equals 66 (and each category
-  table sums to its budget).
+Per decision D-12, the probability defaults in Section 9.5 are approved
+**provisionally** and must be validated with a headless breeding
+simulation before they are treated as final:
+
+- Simulate at least 20 generations of breeding (many seeds) under
+  several player strategies: random pairing, line-breeding toward one
+  stat, and breeding with a strong Guest donor.
+- Report per generation: average and best single stat, Advanced Trait
+  counts, Perk counts and levels, Mutation frequency, and Rarity tier
+  distribution.
+- Targets to check: starters stay below 30 in every stat; meaningful
+  specialists (60+ in one stat) appear only after several selective
+  generations; the first Mutation typically appears within a reasonable
+  play period after unlock; 100-stat mushrooms remain very rare; no
+  single strategy dominates.
+- The simulation reuses the real breeding resolver and configuration (no
+  separate balance math), and its report is kept with the config
+  version.
+
+### 22.3 Additional recommended tests
+
+- Every mushroom without Rare attributes has a base stat total of 66;
+  each Rare attribute adds exactly `rareTierBudgetBonus`; every
+  attribute row sums to its category's (Basic/Uncommon or Rare) budget.
+- Day-phase mapping: fixed timestamps and time-zone offsets map to the
+  expected Dawn/Day/Dusk/Night; weather is identical for the same
+  `worldSeed` and local date.
+- First breeding is free; the second is rejected without enough Glimmer
+  and deducts exactly the configured cost when affordable; imports never
+  change Glimmer.
+- Stages unlock only in the listed order.
 - Largest-remainder rounding: Amber (255,170,0) → 7 / 5 / 0; tie-breaks
   follow Red → Green → Blue and allocation order.
 - Colour allocation is unchanged after recalculation, migration, and
@@ -1628,8 +1720,16 @@ configuration and seeds.
 - A working breeding cycle with sealed seeded resolution, attribute
   inheritance and variation, lineage, and generation tracking.
 - Advanced Traits with the Early Breeding Milestone unlock.
-- A Field Guide with Ordinary Attributes, Colour, Advanced Traits, and
-  Jobs sections.
+- Perks with the Spore Cradle unlock (initial catalogue of 8–12).
+- Mutations with the Moonstone Ring / Generation 5 unlock (initial four,
+  with visuals).
+- Real-local-time day/night phases and seeded weather (required by
+  Perks).
+- Glimmer currency, Trading Stump, and the breeding cost.
+- A Field Guide with Ordinary Attributes, Colour, Advanced Traits,
+  Perks, Mutations, and Jobs sections.
+- The development stages needed to reach the Perk and Mutation unlocks
+  (through Root Hollow), including the Moonstone Ring rare habitat.
 - Offline production and a return summary.
 - Save/load, schema versioning, and manual save export/import.
 - Mushroom export/import sharing with full validation and Guests.
@@ -1637,16 +1737,10 @@ configuration and seeds.
 
 ### Should have
 
-- Perks with the Spore Cradle unlock (initial catalogue of 8–12).
-- Mutations with the rare-habitat/Generation 5 unlock (initial four,
-  with visuals).
-- Forest clock and weather (required as soon as Perks ship).
 - Visible walking and job animations.
 - Basic job synergies.
-- A few buildable structures and workstation requirements beyond the
-  first four jobs (Pond/Creek, Root Hollow).
+- Enchanted Landmark and Community Clearing stages.
 - Wild Visitors.
-- Rare habitat discovery (Moonstone Ring).
 
 ### Not in MVP
 
@@ -1657,6 +1751,8 @@ configuration and seeds.
 - Dozens of jobs before the core loop is proven.
 - Breeding insight tools (planned for Expansion).
 - Hidden/recessive (carrier) genes.
+- Releasing or deleting mushrooms.
+- Re-sharing Guests.
 
 ---
 
@@ -1667,12 +1763,12 @@ configuration and seeds.
 | 0. Foundation | Project setup, responsive layout, save model, centralized config, content definitions, seeded RNG utilities, test harness. | Runs locally and on GitHub Pages subpath; save/load survives refresh; config accessor and RNG sub-streams tested. |
 | 1. Genetics core | Attribute tables, colour system, stat calculator, starter generator, sprite composition. | Tests 1–6 and 8 pass; three starters render and look visibly different. |
 | 2. Forest prototype | Place terrain/objects; display mushrooms; basic movement. | Player can create a small habitat and see mushrooms in the world. |
-| 3. Work loop | Gardener, Forager, then Fungal Patch and Workshop unlocks; inventory; job scores; production timers. | Each job produces a distinct output; assignment and output persist; test 16 passes. |
-| 4. Breeding | Breeding Station, sealed resolution, attribute inheritance/variation, lineage, Advanced Traits, milestone unlocks. | Offspring differ visibly and genetically; parents unchanged; tests 7, 14 pass. |
+| 3. Work loop | Gardener, Forager, then Fungal Patch and Workshop unlocks; inventory; Glimmer and Trading Stump; job scores; production timers. | Each job produces a distinct output; assignment, output, and Glimmer persist; test 16 passes. |
+| 4. Breeding | Breeding Station, sealed resolution, attribute inheritance/variation, lineage, Advanced Traits, milestone unlocks, Glimmer cost; headless balance simulator. | Offspring differ visibly and genetically; parents unchanged; tests 7, 14 pass; first simulation report produced. |
 | 5. Collection and polish | Mushroom Detail, Field Guide, reveal animation, offline return summary. | Player can understand stats and discoveries; offline production consistent. |
 | 6. Social exchange | Share codes/files, validation, Guests, dormant carry. | Two separate browser saves exchange mushrooms; test 15 passes. |
-| 7. Perks, Mutations, time | Forest clock, weather, Spore Cradle, Perks, rare habitat, Mutations and visuals. | Tests 9–13 pass; Perks visibly activate in the right conditions. |
-| 8. Expansion | Remaining areas and jobs, synergies, Wild Visitors, insight tools, more content. | New content added through data files without rewriting core systems. |
+| 7. Perks, Mutations, time | Local-time phases, weather, Spore Cradle, Perks, Pond/Creek and Root Hollow, Moonstone Ring, Mutations and visuals. | Tests 9–13 pass; Perks visibly activate in the right conditions; 20+ generation simulation reviewed and probabilities confirmed. This completes the MVP. |
+| 8. Expansion | Enchanted Landmark, Community Clearing, synergies, Wild Visitors, insight tools, more content. | New content added through data files without rewriting core systems. |
 
 ---
 
@@ -1721,20 +1817,24 @@ Defaults chosen for the first prototype. All remain configurable.
 | Visible population | Up to 10 animated; rest simulated in background | |
 | Resident capacity | 8 + 2 per Mushroom Home; overflow to Spore Archive | |
 | Stat scale | 0–100 per stat, hard cap 100 | |
-| Base stat total | 66 for every ordinary mushroom | |
+| Base stat total | 66 without Rare attributes; +2 per Rare attribute (max 76) | D-1 |
 | Colour budget | 12 points, RGB-normalized, largest-remainder rounding | |
 | Advanced Trait | +4, max 8, max one new per breeding | |
 | Perks | Max 3, level-based, per-Perk combination rules | |
 | Mutations | Max 1, spontaneous 0.75% | |
 | Breeding duration | 3 minutes for testing; rebalance later | |
 | Offline cap | 8 hours | |
-| Forest day | 48 real minutes | |
+| Day/night | Player's real local time; seeded weather per local date | D-10 |
+| Currency | Glimmer, earned only through play | D-14 |
+| Breeding cost | First breeding free, then 15 Glimmer | D-14 |
+| Stage order | Strictly linear, as listed in Section 12.1 | D-15 |
 | Rarity tiers | Common, Uncommon, Rare, Epic, Legendary — derived score | |
 | Social exchange | JSON file plus compact share code | |
 | Visual scale | Consistent pixel grid based on target phone viewport | |
 | Game tone | Cozy, whimsical, slightly mysterious | |
 
-Items still needing approval are listed in Appendix B.
+Appendix B records the owner's decisions and the few new items they
+raise.
 
 ---
 
@@ -1771,33 +1871,48 @@ feel of breeding and visible forest life before adding more content.
 | "Work traits" such as Efficient Waterer, Curious Forager. | Replaced by Perks (conditional bonuses) and Advanced Traits (stat bonuses). |
 | Rarity affects gene probability, trait count, and visual effects. | Rarity is a derived descriptive score. Probabilities come only from configuration; attribute tiers affect visuals and collections, not stat budgets. |
 | "Rare mutations can introduce a gene not visibly present in either parent." | Renamed **attribute variation** (ordinary genes). "Mutation" now means the rare top-tier genetic layer. |
-| MVP "low-probability mutation". | Satisfied by attribute variation (Must). The full Mutation system is Should-have, gated behind its unlock. |
+| MVP "low-probability mutation". | Satisfied by attribute variation; the full Mutation system is also MVP Must-have (D-7), gated behind its unlock. |
 | Glow as a single gene that can affect magical jobs. | Split into ordinary glow (attribute, budget 6) and Mutation glow effects. |
 | Stats "tuned through playtesting" with no derivation. | Stats are fully derived: attributes + traits + Mutation, capped at 100. |
 | Habitats "create opportunities to discover wild mushrooms". | Wild Visitors: temporary, ordinary-only donors; they do not join the collection in the MVP. |
 | Perk example "Dew Collector" vs job "Dew Collector". | Perk renamed Morning Dew. |
-| Social Craft listed last in progression, leaving Blue-group stats unused. | Pond, Root Hollow, and Community Clearing are a branching stage after the Workshop; Forager uses Local Discovery as its secondary stat. |
-| Day/night as a Should-have visual only. | A deterministic forest clock and weather are required once Perks ship. |
+| Social Craft listed last in progression, leaving Blue-group stats unused. | Stages stay linear in the listed order (D-15); Forager uses Local Discovery and Builder uses Social Craft as secondary stats so both are useful early. |
+| Mushroom Homes listed only in the final Community Clearing. | Basic homes are buildable from the Workshop; the Community Clearing adds larger homes. |
+| Day/night as a Should-have visual only. | Day/night follows real local time and, with seeded weather, is MVP Must-have because Perks depend on it. |
+| "Payments, premium currency … not in MVP" and no currency defined. | Glimmer is a soft currency earned only through play; premium currency remains excluded. |
 | v0.1 Section 8.4 "never consume parents". | Retained and extended: parents are never modified by breeding. |
 
 ---
 
-## Appendix B — Decisions awaiting approval
+## Appendix B — Owner decisions (v0.3)
 
-| ID | Decision | Proposed default | Alternatives |
-|---|---|---|---|
-| D-1 | Base stat budgets and the equal total of 66 for all ordinary mushrooms | Equal totals; specialization through distribution | Let Rare attributes carry slightly higher budgets |
-| D-2 | Attribute contribution tables (Section 7.3) | As listed | Rebalance after a spreadsheet pass |
-| D-3 | Advanced Trait stat targeting | Uniform among eligible stats | Weight toward the offspring's top stats (faster specialization) |
-| D-4 | Donor genetics for locked systems | Inherited as dormant until unlocked | Ignored until unlocked; or fully active |
-| D-5 | Mutation unlock trigger | Moonstone Ring discovery or Generation 5 | Rare habitat only; Enchanted Landmark only |
-| D-6 | Re-exporting Guests | Not allowed; offspring can be exported | Allow with provenance tag |
-| D-7 | Perks and Mutations in MVP | Should-have (after the core breeding loop) | Must-have for the first public build |
-| D-8 | Releasing mushrooms ("Return to the Wild") | Not in MVP | Allow with two-step confirmation |
-| D-9 | Wild Visitors joining the collection | Breeding donors only | Can be befriended as residents |
-| D-10 | Forest day length and use of real-world time | 48-minute accelerated day | Real local time-of-day |
-| D-11 | Job effectiveness curve | 0.5× – 2.0× linear | Steeper or diminishing-returns curve |
-| D-12 | Probability defaults (Section 9.5) | As listed | Tune after simulation of 20+ generations |
-| D-13 | Affinity names and derivation | Highest final stat → 8 names | Keep v0.1 six names; derive from colour group |
-| D-14 | Breeding cost and free breedings | 3 free; then berries + leaves (+ spores) | Free breeding, time-gated only |
-| D-15 | Development stage order | Clearing → Fungal Patch → Workshop → {Pond, Root Hollow, Community} → Landmark | Strictly linear as in the brief |
+| ID | Decision | Outcome |
+|---|---|---|
+| D-1 | Base stat budgets | Rare attributes are slightly stronger: +2 to their category budget (`rareTierBudgetBonus`). Basic and Uncommon remain equal. |
+| D-2 | Attribute contribution tables | Approved as listed (Rare rows updated for D-1). |
+| D-3 | Advanced Trait stat targeting | Uniformly random among eligible stats. |
+| D-4 | Donor genetics for locked systems | Inherited but inactive (dormant) until the system is unlocked. |
+| D-5 | Mutation unlock trigger | Moonstone Ring discovery or Generation 5, whichever comes first. |
+| D-6 | Re-exporting Guests | Not allowed. Owned offspring of Guests can be shared. |
+| D-7 | Advanced Traits, Perks, Mutations in MVP | All three are MVP Must-have. |
+| D-8 | Releasing mushrooms | Excluded. |
+| D-9 | Wild Visitors | Breeding partners only; never join the collection. |
+| D-10 | Time of day | Real local time. |
+| D-11 | Job effectiveness curve | Straight line (0.5×–2.0×) for now. |
+| D-12 | Probability defaults | Approved provisionally; must be validated by a 20+ generation simulation (Section 22.2). |
+| D-13 | Affinity | Derived from highest final stat, 8 names. Approved. |
+| D-14 | Breeding cost | One free breeding, then Glimmer (soft currency). |
+| D-15 | Development stage order | Strictly linear, in the order listed. |
+
+### B.1 New items raised by these decisions
+
+These have working defaults in the document and do not block
+implementation, but may need your review:
+
+| ID | Item | Working default |
+|---|---|---|
+| N-1 | Currency name | "Glimmer" |
+| N-2 | How Glimmer is earned | 1 per work cycle × effectiveness; capped daily trading at the Trading Stump; milestone rewards |
+| N-3 | Breeding price | 15 Glimmer, flat (does not rise with generation or rarity) |
+| N-4 | Local-time phase hours | Dawn 05–08, Day 08–18, Dusk 18–21, Night 21–05 |
+| N-5 | Rare budget bonus size | +2 per Rare attribute (max +10 total) |
