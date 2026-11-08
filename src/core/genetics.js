@@ -29,6 +29,8 @@ function randomGenes(rng, tiers, color) {
   const g = {};
   for (const cat of CATEGORIES) g[cat] = rng.pick(attributesIn(cat, tiers)).id;
   g.color = color;
+  // the second colour gene: hidden unless it happens to resemble the shown one
+  g.colorAlleles = [color.slice(), jitter(rng.pick(STARTER_PALETTE).rgb, rng, 20)];
   g.alloc = randomAlloc(rng);
   g.accent = jitter([240, 232, 210], rng, 20);
   g.stemColor = jitter([236, 224, 200], rng, 18);
@@ -97,6 +99,7 @@ export function generateStarters(seed, forest = {}, now = 0) {
       const pal = rng.pick(byGroup[group]);
       const genes = randomGenes(rng, ['basic'], jitter(pal.rgb, rng, cfg.starters.starterColorJitter));
       genes.cap = capPick[i].id;
+      genes.colorAlleles[0] = genes.color.slice();
       return newMushroom({
         uid: 'm_' + hashHex(seed, 'starter', attempt, i),
         name: makeName(rng),
@@ -114,7 +117,9 @@ export function generateStarters(seed, forest = {}, now = 0) {
 
 export function curatedStarters(seed, forest = {}, now = 0) {
   const mk = (i, name, genes, temperament) => newMushroom({
-    uid: 'm_' + hashHex(seed, 'curated', i), name, createdAt: now, generation: 1, genes, temperament,
+    // curated starters: each carries a hidden colour from another part of the wheel
+    uid: 'm_' + hashHex(seed, 'curated', i), name, createdAt: now, generation: 1,
+    genes: { ...genes, colorAlleles: [genes.color.slice(), [[84, 104, 176], [178, 54, 40], [104, 150, 62]][i]] }, temperament,
     origin: { kind: 'starter', forestId: forest.id, forestName: forest.name },
   });
   const base = { accent: [240, 232, 210], stemColor: [236, 224, 200], pattern: 7 };
@@ -138,6 +143,7 @@ const HABITAT_ATTRS = {
 export function generateWildVisitor(seed, habitats, now) {
   const rng = makeRng(seed);
   const genes = randomGenes(rng, ['basic'], jitter(rng.pick(STARTER_PALETTE).rgb, rng, 30));
+  genes.colorAlleles[0] = genes.color.slice();
   // one guaranteed Uncommon attribute, preferring present habitats
   const pool = [];
   for (const [h, count] of Object.entries(habitats)) {
@@ -192,17 +198,68 @@ function blend(rng, ca, cb, cfg, jitterAmt) {
   return ca.map((c, i) => clamp255(c + (cb[i] - c) * t + rng.int(-jitterAmt, jitterAmt)));
 }
 
+export function colorAllelesOf(genes) {
+  return genes.colorAlleles || [genes.color, genes.color];
+}
+
+const rgbDist = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
+
+function hueShift(rgb, deg) {
+  const [h, s, v] = rgbToHsv(rgb);
+  // greys have no hue to turn, so a shift also adds a little colour
+  return hsvToRgb([h + deg, Math.min(1, Math.max(s, 0.25) * 1.05), Math.max(v, 0.3)]);
+}
+
+/** Does this mushroom carry a colour gene that its cap does not show? */
+export function hiddenColor(genes, cfg = getConfig()) {
+  const [p, q] = colorAllelesOf(genes);
+  const d = cfg.inheritance.colorAlleleBlendDistance;
+  if (rgbDist(p, q) < d) return null;
+  const hidden = rgbDist(genes.color, p) > rgbDist(genes.color, q) ? p : q;
+  return rgbDist(hidden, genes.color) >= d ? hidden : null;
+}
+
+/**
+ * Colour genetics: each parent passes on one of its two colour genes (which
+ * may sport to a neighbouring shade). Similar genes blend; different ones
+ * show one and hide the other. Occasionally the shown colour shifts further,
+ * and that shift is inherited.
+ */
 function inheritColor(rng, a, b, ctx, cfg, log) {
-  let color = blend(rng, a.genes.color, b.genes.color, cfg, cfg.inheritance.colorJitter);
-  const variationOn = !ctx.firstBreed || cfg.inheritance.firstBreedVariationEnabled;
-  let vc = cfg.inheritance.attributeVariationChance;
-  if (a.temperament === 'mischievous' || b.temperament === 'mischievous') vc *= cfg.inheritance.mischievousVariationMultiplier;
-  if (variationOn && rng.chance(vc)) {
-    const [h, s, v] = rgbToHsv(color);
-    const shift = rng.range(-cfg.inheritance.colorVariationHueShift, cfg.inheritance.colorVariationHueShift);
-    color = hsvToRgb([h + shift, Math.min(1, s * 1.1 + 0.05), v]);
+  const ci = cfg.inheritance;
+  const variationOn = !ctx.firstBreed || ci.firstBreedVariationEnabled;
+  const mischief = a.temperament === 'mischievous' || b.temperament === 'mischievous' ? ci.mischievousVariationMultiplier : 1;
+  const pass = (parent) => {
+    let gene = rng.pick(colorAllelesOf(parent.genes)).slice();
+    if (variationOn && rng.chance(ci.colorSportChance * mischief)) {
+      const [lo, hi] = ci.colorSportShift;
+      gene = hueShift(gene, (rng.chance(0.5) ? 1 : -1) * rng.range(lo, hi));
+      log.variations.push({ category: 'color', from: null, to: 'sport' });
+    }
+    return gene;
+  };
+  const alleles = [pass(a), pass(b)];
+  let color;
+  let shown;
+  if (rgbDist(alleles[0], alleles[1]) < ci.colorAlleleBlendDistance) {
+    const [lo, hi] = ci.colorBlendRange;
+    const t = rng.range(lo, hi);
+    color = alleles[0].map((c, i) => clamp255(c + (alleles[1][i] - c) * t + rng.int(-ci.colorExpressJitter, ci.colorExpressJitter)));
+    shown = -1;
+  } else {
+    shown = rng.chance(0.5) ? 0 : 1;
+    color = alleles[shown].map((c) => clamp255(c + rng.int(-ci.colorExpressJitter, ci.colorExpressJitter)));
+    if (rgbDist(alleles[shown], [a.genes.color, b.genes.color].reduce((x, y) => (rgbDist(alleles[shown], x) < rgbDist(alleles[shown], y) ? x : y))) > ci.colorAlleleBlendDistance) {
+      log.variations.push({ category: 'color', from: null, to: 'hidden' });
+    }
+  }
+  if (variationOn && rng.chance(ci.colorVariationChance * mischief)) {
+    color = hueShift(color, rng.range(-ci.colorVariationHueShift, ci.colorVariationHueShift));
+    // the shift is heritable: it rewrites the gene behind the shown colour
+    if (shown === -1) { alleles[0] = color.slice(); } else alleles[shown] = color.slice();
     log.variations.push({ category: 'color', from: null, to: 'hue' });
   }
+  const vc = cfg.inheritance.attributeVariationChance * mischief;
   const alloc = {};
   for (const group of Object.keys(COLOR_GROUPS)) {
     const src = rng.chance(0.5) ? a.genes.alloc[group] : b.genes.alloc[group];
@@ -219,7 +276,7 @@ function inheritColor(rng, a, b, ctx, cfg, log) {
     alloc[group] = entry;
   }
   return {
-    color, alloc,
+    color, colorAlleles: alleles, alloc,
     accent: blend(rng, a.genes.accent, b.genes.accent, cfg, 8),
     stemColor: blend(rng, a.genes.stemColor, b.genes.stemColor, cfg, 8),
     pattern: rng.int(0, 99999),

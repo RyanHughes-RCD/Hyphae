@@ -328,3 +328,7 @@ textarea.code { font-family: "Pixeloid Mono", ui-monospace, monospace; font-size
 .tray-name { font-size: 9px; font-weight: 700; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tray-why { font-size: 9px; color: #ffc46a; }
 .drag-ghost { position: fixed; z-index: 60; pointer-events: none; transform: translate(-50%, -75%) scale(1.08); filter: drop-shadow(0 6px 8px rgba(0, 0, 0, 0.5)); }
+
+/* colour genes */
+.hidden-swatch { display: inline-flex; align-items: center; justify-content: center; background: repeating-linear-gradient(45deg, #444 0 3px, #666 3px 6px); color: #fff; font-size: 9px; }
+.colour-options { display: inline-flex; gap: 4px; align-items: center; }

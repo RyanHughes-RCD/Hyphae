@@ -6,6 +6,8 @@ import { PERK_BY_ID, MUTATION_BY_ID, TRAIT_NAMES } from '../../content/genetics.
 import { BREEDING_STATIONS } from '../../content/world.js';
 import { drawMushroom, spriteCanvas, SPRITE_W, SPRITE_H } from '../../render/sprites.js';
 import { hex } from '../../core/color.js';
+import { hiddenColor } from '../../core/genetics.js';
+import { colorFamily } from '../../core/stats.js';
 import { h, costView, mushroomCard, mushroomThumb, section, fmtDuration, empty } from '../common.js';
 
 export function renderBreed(app) {
@@ -203,8 +205,15 @@ function inheritanceHints(app, a, b) {
     const y = ATTRIBUTE_BY_ID[b.genes[cat]].name;
     return h('div', { class: 'attr-row' }, h('span', { class: 'attr-cat' }, CATEGORY_NAMES[cat]), h('span', {}, x === y ? x : `${x} or ${y}`), h('span', { class: 'small muted' }, s.breedingsStarted === 0 ? '' : '· variation possible'));
   });
+  const hiddenCount = [a, b].filter((m) => hiddenColor(m.genes)).length;
   rows.push(h('div', { class: 'attr-row' }, h('span', { class: 'attr-cat' }, 'Cap colour'),
-    h('span', { class: 'blend', style: { background: `linear-gradient(90deg, ${hex(a.genes.color)}, ${hex(b.genes.color)})` } }), h('span', { class: 'small muted' }, 'a blend of both')));
+    h('span', { class: 'colour-options' },
+      h('span', { class: 'swatch', title: colorFamily(a.genes.color).name, style: { background: hex(a.genes.color) } }),
+      h('span', { class: 'swatch', title: colorFamily(b.genes.color).name, style: { background: hex(b.genes.color) } }),
+      hiddenCount ? h('span', { class: 'swatch hidden-swatch', title: 'A hidden colour' }, '?') : null),
+    h('span', { class: 'attr-stats small muted' }, `${colorFamily(a.genes.color).name}, ${colorFamily(b.genes.color).name}, or a blend`,
+      hiddenCount ? ` — ${hiddenCount === 2 ? 'both parents carry' : 'one parent carries'} a hidden colour that may appear` : '',
+      '. Occasionally a brand-new shade.')));
 
   const traitPool = new Map();
   for (const t of a.traits) traitPool.set(t.traitUid, { t, n: 1 });
@@ -278,7 +287,9 @@ function reveal(app, m, rec) {
   if (log.inheritedTraits) highlights.push(h('div', { class: 'small' }, `Inherited ${log.inheritedTraits} Advanced Trait(s).`));
   const varied = log.variations.filter((v) => CATEGORIES.includes(v.category));
   for (const v of varied) highlights.push(h('div', { class: 'highlight' }, `Variation! ${CATEGORY_NAMES[v.category]}: ${ATTRIBUTE_BY_ID[v.to].name} (${ATTRIBUTE_BY_ID[v.to].tier})`));
-  if (log.variations.some((v) => v.category === 'color')) highlights.push(h('div', { class: 'highlight' }, 'Variation! An unexpected colour shift.'));
+  if (log.variations.some((v) => v.category === 'color' && v.to === 'hidden')) highlights.push(h('div', { class: 'highlight' }, 'A hidden colour surfaced!'));
+  if (log.variations.some((v) => v.category === 'color' && v.to === 'sport')) highlights.push(h('div', { class: 'highlight' }, 'Colour sport! A gene shifted to a new shade.'));
+  if (log.variations.some((v) => v.category === 'color' && v.to === 'hue')) highlights.push(h('div', { class: 'highlight' }, 'Variation! An unexpected colour shift — and it will be inherited.'));
   if (!highlights.length) highlights.push(h('div', { class: 'small' }, 'A fresh combination of its parents\' attributes.'));
 
   const pa = rec.parentSnapshots[0];

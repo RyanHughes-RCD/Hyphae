@@ -1,5 +1,7 @@
 // Save/load, schema validation and migration (GDD 3, 18, 20).
 import { RESOURCE_IDS, STAGE_BY_ID, STRUCTURES } from '../content/world.js';
+import { STARTER_PALETTE } from '../content/attributes.js';
+import { hash } from './rng.js';
 import { SCHEMA_VERSION } from './game.js';
 import { enforceLimits } from './genetics.js';
 import { validateRecord, shareRecord } from './share.js';
@@ -34,6 +36,20 @@ const MIGRATIONS = [
       placed.push(spot);
     }
     obj.schemaVersion = 2;
+    return obj;
+  },
+  // v2 -> v3: colour became two genes. The shown colour becomes one gene and
+  // each mushroom gets a hidden colour, chosen from its id so it is stable.
+  (obj) => {
+    const add = (m) => {
+      if (!m?.genes || m.genes.colorAlleles) return;
+      const pal = STARTER_PALETTE[hash(m.uid, 'hiddenColour') % STARTER_PALETTE.length].rgb;
+      m.genes.colorAlleles = [m.genes.color.slice(), pal.slice()];
+    };
+    for (const m of [...(obj.mushrooms || []), ...(obj.guests || [])]) add(m);
+    for (const v of obj.wildVisitors || []) add(v.mushroom);
+    for (const r of obj.breedings || []) { add(r.offspring); for (const p of r.parentSnapshots || []) add(p); }
+    obj.schemaVersion = 3;
     return obj;
   },
 ];

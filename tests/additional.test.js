@@ -4,11 +4,12 @@ import assert from 'node:assert/strict';
 import { resetConfig, setConfig, getConfig, STATS } from '../src/config.js';
 import { ATTRIBUTES, CATEGORIES } from '../src/content/attributes.js';
 import { baseStats, statSum, colorGroupPoints, computeStats } from '../src/core/stats.js';
-import { generateStarters, resolveBreeding, newMushroom } from '../src/core/genetics.js';
+import { generateStarters, resolveBreeding, newMushroom, hiddenColor } from '../src/core/genetics.js';
 import { phaseAt, conditionsAt, weatherForDate } from '../src/core/time.js';
 import * as G from '../src/core/game.js';
-import { exportMushroom, importGuest } from '../src/core/share.js';
+import { exportMushroom, importGuest, shareRecord } from '../src/core/share.js';
 import { serialize, parseSave } from '../src/core/save.js';
+import { hash } from '../src/core/rng.js';
 
 const NOW = Date.UTC(2026, 10, 8, 12, 0, 0);
 const HOUR = 3600000;
@@ -267,7 +268,7 @@ test('schema 1 saves migrate: areas become clearings with unique positions', () 
   old.schemaVersion = 1;
   for (const a of Object.values(old.world.areas)) { delete a.cx; delete a.cy; delete a.stage; }
   const migrated = parseSave(JSON.stringify(old));
-  assert.equal(migrated.schemaVersion, 2);
+  assert.equal(migrated.schemaVersion, G.SCHEMA_VERSION);
   const pos = Object.values(migrated.world.areas).map((a) => `${a.cx},${a.cy}`);
   assert.equal(new Set(pos).size, pos.length);
   assert.deepEqual([migrated.world.areas.clearing.cx, migrated.world.areas.clearing.cy], [0, 0]);
@@ -342,4 +343,99 @@ test('water and thicket block mushrooms until bridged or cleared; clutter must b
   const free = [];
   for (let y = 1; y < 8; y++) for (let x = 1; x < 9; x++) if (!['u', 'w', 'r'].includes(f.tiles[y][x]) && G.tileFree(s, 'fungal', x, y) && G.isReachable(s, 'fungal', x, y)) free.push([x, y]);
   if (free.length) assert.ok(G.moveObject(s, bed.id, free[0][0], free[0][1]).ok);
+});
+
+// ---------------------------------------------------------------- colour genes
+
+const RED = [190, 40, 40];
+const GREEN = [80, 160, 80];
+const LIME = [150, 200, 70];
+const withColors = (uid, shown, alleles) => mk(uid, { color: shown, colorAlleles: alleles });
+
+test('each parent passes on one of its two colour genes', () => {
+  setConfig({ inheritance: { colorSportChance: 0, colorVariationChance: 0 } });
+  const a = withColors('a', GREEN, [GREEN, RED]);
+  const b = withColors('b', GREEN, [GREEN, [60, 90, 200]]);
+  for (let i = 0; i < 200; i++) {
+    const { offspring } = resolveBreeding(a, b, ctx('al' + i));
+    const [x, y] = offspring.genes.colorAlleles;
+    assert.ok([GREEN, RED].some((c) => c.join() === x.join()), 'first gene comes from parent A');
+    assert.ok([GREEN, [60, 90, 200]].some((c) => c.join() === y.join()), 'second gene comes from parent B');
+  }
+});
+
+test('two green parents hiding red can have a red offspring', () => {
+  setConfig({ inheritance: { colorSportChance: 0, colorVariationChance: 0 } });
+  const a = withColors('a', GREEN, [GREEN, RED]);
+  const b = withColors('b', GREEN, [GREEN, RED]);
+  let red = 0;
+  for (let i = 0; i < 400; i++) {
+    const c = resolveBreeding(a, b, ctx('hr' + i)).offspring.genes.color;
+    if (c[0] > c[1] + 60) red++;
+  }
+  // both pass red 1/4 of the time; one red + one green shows red half the time: ~1/2 overall
+  assert.ok(red > 140 && red < 260, `red offspring ${red}/400`);
+});
+
+test('similar colour genes blend; different ones show one and hide the other', () => {
+  setConfig({ inheritance: { colorSportChance: 0, colorVariationChance: 0 } });
+  const blendKid = resolveBreeding(withColors('a', GREEN, [GREEN, GREEN]), withColors('b', LIME, [LIME, LIME]), ctx('bl')).offspring;
+  const c = blendKid.genes.color;
+  assert.ok(c[0] > GREEN[0] - 10 && c[0] < LIME[0] + 10, 'a blend sits between the parents');
+  for (let i = 0; i < 50; i++) {
+    const kid = resolveBreeding(withColors('a', GREEN, [GREEN, GREEN]), withColors('b', RED, [RED, RED]), ctx('sh' + i)).offspring;
+    const [x, y] = kid.genes.colorAlleles;
+    const near = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]) < 30;
+    assert.ok(near(kid.genes.color, x) || near(kid.genes.color, y), 'shows one of its genes');
+    assert.ok(hiddenColor(kid.genes), 'and hides the other');
+  }
+});
+
+test('colour sports and shifts let a pure green line reach red by selective breeding', () => {
+  const redness = (m) => m.genes.color[0] - Math.max(m.genes.color[1], m.genes.color[2]);
+  let reached = 0;
+  for (let r = 0; r < 20; r++) {
+    let pop = [0, 1, 2].map((i) => withColors('g' + r + i, GREEN, [GREEN, GREEN]));
+    for (let g = 0; g < 40 && !pop.some((m) => redness(m) > 60); g++) {
+      const sorted = pop.slice().sort((x, y) => redness(y) - redness(x));
+      const kids = Array.from({ length: 6 }, (_, i) => resolveBreeding(sorted[0], sorted[1 + (i % 2)] || sorted[1], ctx(`s${r}-${g}-${i}`)).offspring);
+      pop = kids.concat(pop).sort((x, y) => redness(y) - redness(x)).slice(0, 4);
+    }
+    if (pop.some((m) => redness(m) > 60)) reached++;
+  }
+  assert.ok(reached >= 15, `pure green lines that reached red: ${reached}/20`);
+});
+
+test('every starter carries a second colour gene; colour genes survive saves and sharing', () => {
+  const s = G.newGame({ now: NOW, seed: 'genes', tzOffset: 0 });
+  for (const m of s.mushrooms) assert.equal(m.genes.colorAlleles.length, 2);
+  const other = G.newGame({ now: NOW, seed: 'genes2', tzOffset: 0 });
+  const g = importGuest(other, exportMushroom(s, s.mushrooms[0].uid, NOW).code, NOW).guest;
+  assert.deepEqual(g.genes.colorAlleles, s.mushrooms[0].genes.colorAlleles);
+  assert.deepEqual(parseSave(serialize(s)).mushrooms[0].genes.colorAlleles, s.mushrooms[0].genes.colorAlleles);
+});
+
+test('schema 2 saves gain colour genes: the shown colour plus a stable hidden one', () => {
+  const s = G.newGame({ now: NOW, seed: 'v2', tzOffset: 0 });
+  const old = JSON.parse(serialize(s));
+  old.schemaVersion = 2;
+  for (const m of old.mushrooms) delete m.genes.colorAlleles;
+  const a = parseSave(JSON.stringify(old));
+  const b = parseSave(JSON.stringify(old));
+  for (const m of a.mushrooms) assert.deepEqual(m.genes.colorAlleles[0], m.genes.color);
+  assert.deepEqual(a.mushrooms.map((m) => m.genes.colorAlleles), b.mushrooms.map((m) => m.genes.colorAlleles));
+});
+
+test('share codes made before colour genes still import', () => {
+  const A = G.newGame({ now: NOW, seed: 'oldA', forestName: 'Alder', tzOffset: 0 });
+  const m = A.mushrooms[0];
+  m.genes.colorAlleles = [m.genes.color.slice(), m.genes.color.slice()];
+  const rec = shareRecord(A, m, NOW);
+  delete rec.ge.ca;
+  const json = JSON.stringify(rec);
+  const code = 'MF1-' + Buffer.from(json).toString('base64url') + '.' + hash(json).toString(36);
+  const B = G.newGame({ now: NOW, seed: 'oldB', tzOffset: 0 });
+  const r = importGuest(B, code, NOW);
+  assert.ok(r.ok, JSON.stringify(r.errors));
+  assert.deepEqual(r.guest.genes.colorAlleles, [m.genes.color, m.genes.color]);
 });

@@ -12,7 +12,7 @@ import { computeStats, colorFamily } from './stats.js';
 import { generateStarters, generateWildVisitor, resolveBreeding } from './genetics.js';
 import { conditionsAt, localParts, currentTzOffset } from './time.js';
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 const HOUR = 3600000;
 const MIN = 60000;
 

@@ -68,7 +68,13 @@ const DEFAULT_CONFIG = {
     firstBreedVariationEnabled: false,
     colorBlendRange: [0.3, 0.7],
     colorJitter: 12,
-    colorVariationHueShift: 30,
+    // two colour genes per mushroom: one shown, one possibly hidden
+    colorAlleleBlendDistance: 90, // genes closer than this (RGB distance) blend; otherwise one is shown, 50/50
+    colorExpressJitter: 8,
+    colorSportChance: 0.04, // a passed-on colour gene shifts to a neighbouring shade
+    colorSportShift: [25, 45], // degrees around the colour wheel
+    colorVariationChance: 0.15, // the shown colour shifts (and the change is inherited)
+    colorVariationHueShift: 60,
     temperamentInheritance: { parentA: 0.45, parentB: 0.45, random: 0.1 },
   },
 

@@ -2,7 +2,7 @@
 
 ## A cozy breeding, collecting, and forest-life game
 
-**Game Design Document | Version 0.5 | November 2026**
+**Game Design Document | Version 0.6 | November 2026**
 
 > **Design direction:** Begin with three ordinary mushrooms. Breed them,
 > generation by generation, into prized specialists. Give them meaningful
@@ -22,6 +22,7 @@
 | 0.3 | Nov 2026 | Owner decisions D-1 to D-15 applied (Appendix B): Rare attributes slightly stronger; Perks, Mutations and Weather/Time promoted to MVP Must-have; day/night follows real local time; one free breeding, then the soft currency **Glimmer**; development stages strictly linear in the listed order; balance simulation of 20+ generations required before probabilities are locked. |
 | 0.4 | Nov 2026 | One continuous forest (D-16): every clearing and job lives on the same forest screen. The forest grows when the player expands it north, east, south or west of a clearing; each story clearing's structures spawn at random positions in the new clearing. Quiet glades (plain clearings) can be bought for building space after the Woodland Workshop. Save schema 2 with migration. |
 | 0.5 | Nov 2026 | Wild, randomly generated expansions that must be cleaned up (clutter and thicket) and organised (every structure can be moved); a river that grows with each expansion and must be bridged; drag-and-drop breeding pen; signposts removed; mushrooms shown at 65% size. |
+| 0.6 | Nov 2026 | Colour genetics redone (D-18): two colour genes per mushroom (one may be hidden and resurface in offspring), colour sports to neighbouring shades, and larger heritable colour shifts. Save schema 3. |
 
 ### 0.2 Conventions
 
@@ -910,20 +911,39 @@ For each attribute category:
 This "attribute variation" replaces v0.1's use of the word "mutation" for
 new visual genes (Appendix A).
 
-### 9.4.2 Colour inheritance
+### 9.4.2 Colour inheritance (v0.6, decision D-18)
 
-- **RGB:** `child = lerp(A, B, t)` per channel with seeded
-  `t ∈ [0.3, 0.7]`, plus seeded jitter of ±12 per channel, clamped to
-  0–255 (Config: `colorBlendRange`, `colorJitter`).
-- **Colour variation** (same chance as attribute variation): a seeded hue
-  shift of up to ±30° (Config: `colorVariationHueShift`).
-- **Allocation sub-gene:** each group's template and order are inherited
-  from either parent (50 / 50); variation may change the template or
-  swap two stats in the order.
-- Accent and stem colours blend the same way (cosmetic only).
+Colour is inherited like a real gene, so any colour can be bred toward and
+hidden colours can surprise the player.
 
-Blending yellow (255, 255, 0) with blue (0, 0, 255) gives roughly grey,
-and therefore an even 4 / 4 / 4 colour budget — intuitive for players.
+- **Two colour genes** per mushroom (`colorAlleles`), one from each parent.
+  Each parent passes on one of its two genes at random.
+- **Expression:** genes closer than Config: `colorAlleleBlendDistance`
+  (RGB distance 90) blend (seeded t ∈ [0.3, 0.7]); otherwise the cap shows
+  one gene (50/50) and the other stays **hidden**, ready to resurface in
+  later generations. Two green parents that both hide red produce a red
+  offspring about half the time.
+- **Colour sports:** each passed-on gene has Config: `colorSportChance` (4%)
+  to shift 25–45° around the colour wheel to a neighbouring shade.
+- **Colour shifts:** Config: `colorVariationChance` (15%) that the shown
+  colour shifts by up to ±60°; the shift is written into the gene behind it,
+  so it is inherited.
+- **Starters** each show a Basic palette colour and carry a random hidden
+  colour from the palette. Wild Visitors do too.
+- **Stats are unchanged:** the *shown* colour gives exactly 12 points,
+  split by RGB as in Section 7.4. The colour-allocation sub-gene is
+  inherited as before.
+- **Readability:** the detail screen says whether a mushroom carries a
+  hidden colour (without revealing it); the breeding pen lists the parents'
+  colours and notes when a hidden colour may appear.
+- **Balance check** (200 simulated runs from three green starters): with
+  nothing hidden, selective breeding reaches red in a median of 48 breedings
+  (196/200 runs); when starters hide random colours, red appears in a
+  median of 9–12 breedings. Colours also stay vivid instead of averaging
+  toward grey.
+- Save schema 3 converts older mushrooms: the shown colour becomes one gene
+  and a stable hidden colour is chosen from each mushroom's id. Share codes
+  carry an optional `ca` field; codes made before it still import.
 
 ### 9.4.3 Advanced Trait inheritance
 
@@ -1946,6 +1966,7 @@ feel of breeding and visible forest life before adding more content.
 | D-13 | Affinity | Derived from highest final stat, 8 names. Approved. |
 | D-14 | Breeding cost | One free breeding, then Glimmer (soft currency). |
 | D-15 | Development stage order | Strictly linear, in the order listed. |
+| D-18 | Colour genetics | Two colour genes (shown + hidden), sports, and larger heritable shifts. |
 | D-17 | Breeding parent selection | Drag and drop (or tap) mushrooms into a breeding pen. |
 | D-16 | Forest layout | One continuous forest; the player expands it north, east, south or west, and new job structures spawn at random in the new clearing. |
 

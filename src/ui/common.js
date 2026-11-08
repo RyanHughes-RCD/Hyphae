@@ -7,6 +7,7 @@ import { PERK_BY_ID, MUTATION_BY_ID, TRAIT_NAMES } from '../content/genetics.js'
 import { mushroomCanvas, resourceColor } from '../render/sprites.js';
 import { affinity, rarityTier, colorFamily, colorGroupPoints, colorContribution } from '../core/stats.js';
 import { statsOf } from '../core/game.js';
+import { hiddenColor } from '../core/genetics.js';
 import { hex } from '../core/color.js';
 
 export function h(tag, attrs = {}, ...children) {
@@ -132,6 +133,12 @@ export function attributeList(m) {
     h('span', { class: 'attr-cat' }, 'Cap colour'),
     h('span', { class: 'attr-name' }, h('span', { class: 'swatch', style: { background: hex(m.genes.color) } }), fam.name, h('span', { class: 'small' }, ` rgb(${m.genes.color.join(', ')})`)),
     h('span', { class: 'attr-stats small' }, `R ${rp} / G ${gp} / B ${bp} → `, statText(contrib))));
+  rows.push(h('div', { class: 'attr-row' },
+    h('span', { class: 'attr-cat' }, 'Colour genes'),
+    hiddenColor(m.genes)
+      ? h('span', { class: 'attr-name' }, h('span', { class: 'swatch', style: { background: hex(m.genes.color) } }), 'shown + ', h('span', { class: 'swatch hidden-swatch', title: 'A hidden colour' }, '?'), 'a hidden colour')
+      : h('span', { class: 'attr-name' }, 'No hidden colour'),
+    h('span', { class: 'attr-stats small' }, hiddenColor(m.genes) ? 'Its offspring may show the hidden colour instead.' : 'Both of its colour genes look alike.')));
   return h('div', { class: 'attr-list' }, rows);
 }
 

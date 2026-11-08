@@ -24,10 +24,16 @@ function fromB64Url(s) {
 }
 
 function canonicalGenetics(m) {
-  return JSON.stringify([m.genes.cap, m.genes.stem, m.genes.markings, m.genes.gills, m.genes.glow, m.genes.color, m.genes.alloc,
+  // the hidden colour is only part of the identity when it differs from the shown one,
+  // so share codes made before colour genes existed keep their ids
+  const al = m.genes.colorAlleles;
+  const hidden = al && !(sameRgb(al[0], m.genes.color) && sameRgb(al[1], m.genes.color)) ? al : null;
+  return JSON.stringify([m.genes.cap, m.genes.stem, m.genes.markings, m.genes.gills, m.genes.glow, m.genes.color, ...(hidden ? [hidden] : []), m.genes.alloc,
     m.genes.accent, m.genes.stemColor, m.genes.pattern, m.temperament, m.generation,
     m.traits.map((t) => [t.traitUid, t.stat, t.bonus]), m.perks.map((p) => [p.perkId, p.level]), m.mutation?.mutationId ?? null]);
 }
+
+const sameRgb = (p, q) => p && q && p[0] === q[0] && p[1] === q[1] && p[2] === q[2];
 
 export function computeShareId(m, originalId, originForestId) {
   return 'sh_' + hashHex(canonicalGenetics(m), originalId, originForestId);
@@ -51,7 +57,7 @@ export function shareRecord(state, m, now = Date.now()) {
     g: m.generation,
     ge: {
       c: m.genes.cap, st: m.genes.stem, mk: m.genes.markings, gi: m.genes.gills, gl: m.genes.glow,
-      col: m.genes.color, al: m.genes.alloc, ac: m.genes.accent, sc: m.genes.stemColor, p: m.genes.pattern,
+      col: m.genes.color, ca: m.genes.colorAlleles, al: m.genes.alloc, ac: m.genes.accent, sc: m.genes.stemColor, p: m.genes.pattern,
     },
     te: m.temperament,
     tr: m.traits.map((t) => [t.traitUid, t.stat, t.bonus, t.originMushroomId, t.originName, t.originGeneration, t.originForestId]),
@@ -135,6 +141,7 @@ export function validateRecord(rec) {
     if (!def) { unknownContent = typeof genes[cat] === 'string'; e.push(`Unknown ${cat} attribute.`); } else if (def.category !== cat) e.push(`Attribute in wrong category: ${cat}.`);
   }
   if (!isRgb(ge.col) || !isRgb(ge.ac) || !isRgb(ge.sc)) e.push('Invalid colour values.');
+  if (ge.ca !== undefined && !(Array.isArray(ge.ca) && ge.ca.length === 2 && ge.ca.every(isRgb))) e.push('Invalid colour genes.');
   if (!isInt(ge.p, 0, 99999)) e.push('Invalid pattern seed.');
   if (!ge.al || typeof ge.al !== 'object') e.push('Invalid colour allocation.');
   else {
@@ -197,7 +204,7 @@ export function validateRecord(rec) {
 export function recordToGuest(state, rec, now) {
   const genes = {
     cap: rec.ge.c, stem: rec.ge.st, markings: rec.ge.mk, gills: rec.ge.gi, glow: rec.ge.gl,
-    color: rec.ge.col.slice(), alloc: structuredClone(rec.ge.al), accent: rec.ge.ac.slice(), stemColor: rec.ge.sc.slice(), pattern: rec.ge.p,
+    color: rec.ge.col.slice(), colorAlleles: rec.ge.ca ? rec.ge.ca.map((c) => c.slice()) : [rec.ge.col.slice(), rec.ge.col.slice()], alloc: structuredClone(rec.ge.al), accent: rec.ge.ac.slice(), stemColor: rec.ge.sc.slice(), pattern: rec.ge.p,
   };
   const m = newMushroom({
     uid: 'g_' + hashHex(rec.sid, state.forest.id),

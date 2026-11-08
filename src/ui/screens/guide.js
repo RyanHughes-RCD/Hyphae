@@ -61,6 +61,8 @@ function colourTab(app) {
         h('li', {}, 'Green share → Construction, Magic, Animal Care'),
         h('li', {}, 'Blue share → Local Discovery, Social Craft')),
       h('p', {}, 'The RGB values are divided by their total to split the 12 points (yellow = 6/6/0, white = 4/4/4, pure red = 12/0/0). A hidden colour-allocation gene then decides how each group\'s points spread: Focus (all to one stat), Lean (2:1) or Even. It never changes once a mushroom is born.')),
+    section('Colour genes', h('p', {}, 'Every mushroom carries two colour genes, one from each parent. When the two are alike they blend; when they differ, the cap shows one and hides the other — so two green mushrooms can still have a red offspring if they both carry hidden red.'),
+      h('p', {}, 'Now and then a passed-on gene "sports" to a neighbouring shade, and sometimes a cap shifts colour more strongly. Both changes are inherited, so with patient breeding any colour can be reached. Wild Visitors and friends\' Guests bring new colours too.')),
     section('Try it', sliders, out),
     section(`Colour families discovered (${Object.keys(fams).length}/${COLOR_FAMILIES.length})`, h('div', { class: 'swatches' }, COLOR_FAMILIES.map((f) => h('span', { class: 'fam' + (fams[f.id] ? '' : ' unknown'), title: fams[f.id] ? f.name : '???' }, h('span', { class: 'swatch', style: { background: fams[f.id] ? hex(f.rgb) : '#333' } }), fams[f.id] ? f.name : '???')))));
 }
