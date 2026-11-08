@@ -23,6 +23,15 @@ const PAN_MARGIN = 60; // how far beyond the area's edge the view's centre may g
 const ZOOM_RANGE = 4; // max zoom = fit zoom × this
 const TAP_SLOP = 7; // CSS px a pointer may move and still count as a tap
 const GRASS_TILE = 160; // logical px covered by one copy of the grass painting
+const CANOPY_TILE = 300; // logical px covered by one copy of the canopy shadow
+
+// dappled canopy light and sun rays by time of day: shade/light opacity, light tint, ray strength
+const CANOPY = {
+  day: { shade: 0.24, light: 0.34, tint: [255, 244, 200], rays: 1 },
+  dawn: { shade: 0.22, light: 0.32, tint: [255, 196, 120], rays: 1 },
+  dusk: { shade: 0.24, light: 0.26, tint: [255, 168, 96], rays: 0.8 },
+  night: { shade: 0.15, light: 0.12, tint: [170, 196, 255], rays: 0.4 },
+};
 
 const ANIM_FX = {
   water: '#8fd8ff', carry: '#c8955a', spores: '#d9c27a', hammer: '#ffe9a0', tend: '#f08cc0', dig: '#7a5434', glow: '#ffe066',
@@ -51,6 +60,12 @@ export class ForestView {
     this.grass = new Image();
     this.grass.onload = () => { this.grassTile = mirrorTile(this.grass); };
     this.grass.src = 'assets/art/grass.webp';
+
+    // shadow of the treetops above (white = shade, black = gaps in the leaves)
+    this.canopyImg = new Image();
+    this.canopyImg.onload = () => { this.canopy = makeCanopy(this.canopyImg); };
+    this.canopyImg.src = 'assets/art/canopy-shadow.webp';
+    this.rayCache = new Map();
 
     canvas.addEventListener('pointerdown', (e) => this.onDown(e));
     canvas.addEventListener('pointermove', (e) => this.onMove(e));
@@ -594,7 +609,11 @@ export class ForestView {
     items.sort((p, q) => p.y - q.y);
     for (const it of items) it.draw();
 
-    // 4. build overlay: tile grid on every clearing
+    // 4. light through the treetops: drifting canopy shade with sunlit gaps
+    const lightOn = s.settings.canopyLight !== false;
+    if (lightOn && this.canopy) this.drawCanopy(ctx, view, t, rm);
+
+    // 5. build overlay: tile grid on every clearing
     if (this.app.buildTool) {
       ctx.strokeStyle = 'rgba(255,255,255,0.22)';
       ctx.lineWidth = 1 / c.zoom;
@@ -617,7 +636,7 @@ export class ForestView {
       }
     }
 
-    // 5. pop-ups
+    // 6. pop-ups
     for (const p of this.popups) {
       const yy = p.y - (1.6 - p.life) * 8;
       ctx.globalAlpha = Math.min(1, p.life);
@@ -631,7 +650,7 @@ export class ForestView {
       ctx.globalAlpha = 1;
     }
 
-    // 6. time of day and weather, across the whole screen
+    // 7. time of day and weather, across the whole screen
     const cond = this.app.conditions;
     if (cond.phase === 'night' || cond.phase === 'dusk') {
       ctx.fillStyle = 'rgba(230,255,140,0.9)';
@@ -646,6 +665,7 @@ export class ForestView {
     const H = this.canvas.height;
     const tint = { dawn: 'rgba(255,170,90,0.13)', day: null, dusk: 'rgba(120,60,140,0.2)', night: 'rgba(16,20,60,0.42)' }[cond.phase];
     if (tint) { ctx.fillStyle = tint; ctx.fillRect(0, 0, W, H); }
+    if (lightOn) this.drawRays(ctx, t, rm);
     if (cond.raining) {
       ctx.fillStyle = 'rgba(30,40,70,0.15)';
       ctx.fillRect(0, 0, W, H);
@@ -657,6 +677,67 @@ export class ForestView {
         ctx.fillRect(rx * d, ry * d, 1.5 * d, 7 * d);
       }
     }
+  }
+
+  /** Canopy shade over everything, in world space so it pans and zooms with the forest. */
+  drawCanopy(ctx, view, t, rm) {
+    const cond = this.app.conditions;
+    const look = CANOPY[cond.phase] || CANOPY.day;
+    const c = this.canopy;
+    const tw = CANOPY_TILE * 2;
+    const th = tw * (c.shade.height / c.shade.width);
+    // two layers drifting in different directions make the light gaps slowly change shape
+    const drift = (k) => (rm ? { x: 0, y: 0 } : { x: t * 2.2 * k + Math.sin(t * 0.13 * k) * 10, y: t * 0.9 * k + Math.cos(t * 0.11 * k) * 7 });
+    const d1 = drift(1);
+    const d2 = drift(-0.7);
+    ctx.imageSmoothingEnabled = true;
+    // leaf shade multiplies, so the greens stay rich instead of turning grey
+    ctx.globalCompositeOperation = 'multiply';
+    ctx.globalAlpha = look.shade * 1.3;
+    tile(ctx, c.shade, tw, th, d1.x, d1.y, view);
+    ctx.globalAlpha = look.shade * 0.9;
+    tile(ctx, c.shade, tw * 1.37, th * 1.37, d2.x + 97, d2.y + 41, view);
+    // sunlit gaps: warm, brightened ground where the leaves part
+    const rain = cond.raining ? 0.35 : 1;
+    ctx.globalCompositeOperation = 'soft-light';
+    ctx.globalAlpha = Math.min(1, look.light * 2.2 * rain);
+    tile(ctx, tinted(c.light, look.tint, this.rayCache), tw, th, d1.x, d1.y, view);
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1;
+    ctx.imageSmoothingEnabled = false;
+  }
+
+  /** Soft slanted shafts of light falling through the canopy (screen space). */
+  drawRays(ctx, t, rm) {
+    const cond = this.app.conditions;
+    if (cond.raining) return;
+    const look = CANOPY[cond.phase] || CANOPY.day;
+    const key = 'ray' + look.tint.join(',');
+    if (!this.rayCache.has(key)) this.rayCache.set(key, makeRay(look.tint));
+    const ray = this.rayCache.get(key);
+    const d = this.dpr;
+    const angle = 0.42;
+    const len = this.vh * 1.7;
+    const span = this.vw + Math.tan(angle) * this.vh;
+    ctx.setTransform(d, 0, 0, d, 0, 0);
+    ctx.globalCompositeOperation = 'screen';
+    ctx.imageSmoothingEnabled = true;
+    const N = 6;
+    for (let i = 0; i < N; i++) {
+      const base = ((i + 0.5) / N) * span - Math.tan(angle) * this.vh * 0.55;
+      const x = base + (rm ? 0 : Math.sin(t * 0.06 + i * 1.7) * 36);
+      const w = 60 + ((i * 53) % 110);
+      const pulse = rm ? 0.75 : 0.5 + 0.5 * Math.sin(t * 0.33 + i * 2.3);
+      ctx.globalAlpha = (0.1 + 0.14 * pulse) * look.rays;
+      ctx.save();
+      ctx.translate(x, -30);
+      ctx.rotate(-angle);
+      ctx.drawImage(ray, -w / 2, 0, w, len);
+      ctx.restore();
+    }
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1;
+    ctx.imageSmoothingEnabled = false;
   }
 
   drawAgent(ctx, a, t, rm) {
@@ -729,10 +810,80 @@ function clamp(v, lo, hi) {
   return Math.max(lo, Math.min(hi, v));
 }
 
+/** Fill the view with `img` repeating every (tw, th) world px, scrolled by (offX, offY). Seamless. */
+function tile(ctx, img, tw, th, offX, offY, view) {
+  if (!img._pattern) img._pattern = ctx.createPattern(img, 'repeat');
+  const pat = img._pattern;
+  pat.setTransform(new DOMMatrix().translateSelf(offX, offY).scaleSelf(tw / img.width, th / img.height));
+  ctx.fillStyle = pat;
+  ctx.fillRect(view.x0, view.y0, view.w, view.h);
+}
+
+/** Split the canopy mask into a dark shade layer and a light-gap layer, both seamlessly tileable. */
+function makeCanopy(img) {
+  // the mask is soft, so half resolution looks identical and draws much faster
+  const w = Math.round(img.naturalWidth / 2);
+  const h = Math.round(img.naturalHeight / 2);
+  const src = document.createElement('canvas');
+  src.width = w;
+  src.height = h;
+  const sctx = src.getContext('2d', { willReadFrequently: true });
+  sctx.drawImage(img, 0, 0, w, h);
+  const data = sctx.getImageData(0, 0, w, h);
+  const shade = new ImageData(w, h);
+  const light = new ImageData(w, h);
+  for (let i = 0; i < data.data.length; i += 4) {
+    const v = data.data[i]; // 255 = leaf shadow, 0 = gap
+    shade.data[i] = 70; shade.data[i + 1] = 96; shade.data[i + 2] = 84; shade.data[i + 3] = v;
+    light.data[i] = 255; light.data[i + 1] = 255; light.data[i + 2] = 255; light.data[i + 3] = 255 - v;
+  }
+  const toCanvas = (img2) => { const c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d').putImageData(img2, 0, 0); return mirrorTile(c); };
+  return { shade: toCanvas(shade), light: toCanvas(light) };
+}
+
+/** A copy of `src` filled with one colour (kept in `cache`). */
+function tinted(src, rgb, cache) {
+  const key = 'tint' + rgb.join(',');
+  if (cache.has(key)) return cache.get(key);
+  const c = document.createElement('canvas');
+  c.width = src.width;
+  c.height = src.height;
+  const x = c.getContext('2d');
+  x.drawImage(src, 0, 0);
+  x.globalCompositeOperation = 'source-in';
+  x.fillStyle = `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;
+  x.fillRect(0, 0, c.width, c.height);
+  cache.set(key, c);
+  return c;
+}
+
+/** A soft beam: brightest down its middle, fading along its length. */
+function makeRay(rgb) {
+  const W = 64;
+  const H = 256;
+  const c = document.createElement('canvas');
+  c.width = W;
+  c.height = H;
+  const x = c.getContext('2d');
+  const img = x.createImageData(W, H);
+  for (let y = 0; y < H; y++) {
+    const v = y / H;
+    const along = Math.min(1, v * 6) * Math.pow(1 - v, 1.4);
+    for (let i = 0; i < W; i++) {
+      const u = (i - W / 2) / (W / 2);
+      const a = Math.exp(-u * u * 3.2) * along;
+      const k = (y * W + i) * 4;
+      img.data[k] = rgb[0]; img.data[k + 1] = rgb[1]; img.data[k + 2] = rgb[2]; img.data[k + 3] = Math.round(a * 255);
+    }
+  }
+  x.putImageData(img, 0, 0);
+  return c;
+}
+
 /** 2×2 mirrored copy of an image: tiles seamlessly. */
 function mirrorTile(img) {
-  const w = img.naturalWidth;
-  const h = img.naturalHeight;
+  const w = img.naturalWidth || img.width;
+  const h = img.naturalHeight || img.height;
   const c = document.createElement('canvas');
   c.width = w * 2;
   c.height = h * 2;

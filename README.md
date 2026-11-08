@@ -71,4 +71,6 @@ offline progress is clamped to 8 hours and a backward clock grants nothing.
 - Grass backdrop (`assets/art/grass.webp`) and shrubbery border
   (`assets/art/hedge-strip*.webp`) supplied by the project owner; trimmed and
   rotated copies of the originals.
+- Canopy shadow overlay (`assets/art/canopy-shadow.webp`) supplied by the project
+  owner; its alpha mask stored as greyscale at half size.
 - Mushrooms, structures and terrain features are drawn procedurally in code.

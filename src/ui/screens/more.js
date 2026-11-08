@@ -135,6 +135,7 @@ function settings(app) {
       s.forest.name = n; app.save(); app.render(); app.toast('Renamed.');
     } }, 'Save name')),
     section('Display', h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: s.settings.reducedMotion, onchange: (e) => { s.settings.reducedMotion = e.target.checked; app.save(); } }), ' Reduce motion'),
+      h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: s.settings.canopyLight !== false, onchange: (e) => { s.settings.canopyLight = e.target.checked; app.save(); } }), ' Dappled light and sun rays'),
       h('p', { class: 'small muted' }, 'Day and night follow your device\'s local time.')),
     section('Backup', h('p', { class: 'small' }, 'Your forest is saved automatically in this browser. Export a backup file to keep it safe or move it to another device.'),
       h('div', { class: 'row gap wrap' },
