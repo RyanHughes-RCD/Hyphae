@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { resetConfig, setConfig, getConfig, STATS } from '../src/config.js';
-import { ATTRIBUTES, CATEGORIES } from '../src/content/attributes.js';
+import { ATTRIBUTES, CATEGORIES, SECONDARY_PALETTE, STEM_PALETTE } from '../src/content/attributes.js';
 import { baseStats, statSum, colorGroupPoints, computeStats } from '../src/core/stats.js';
 import { generateStarters, resolveBreeding, newMushroom, hiddenColor } from '../src/core/genetics.js';
 import { phaseAt, conditionsAt, weatherForDate } from '../src/core/time.js';
@@ -562,4 +562,53 @@ test('schema 3 saves: the old Breeding Nook becomes a movable pen', () => {
   assert.equal(pen.def, 'breeding_pen');
   assert.equal(pen.prefab, false);
   assert.equal(G.penCount(m), 1);
+});
+
+test('distinct growth forms do completely different work', () => {
+  // the four looks from the art brief: a glassy tuft, a beaded lump, a tipped warty cap, a shaggy inkcap
+  const looks = [
+    { cap: 'tuftcap', stem: 'slender', markings: 'gloss', gills: 'fine', glow: 'soft', color: [70, 170, 70] },
+    { cap: 'lumpcap', stem: 'stubby', markings: 'beads', gills: 'toothed', glow: 'none', color: [226, 214, 214] },
+    { cap: 'tiltcap', stem: 'warty', markings: 'spots', gills: 'velvet', glow: 'none', color: [232, 92, 120] },
+    { cap: 'inkcap', stem: 'lanky', markings: 'shaggy', gills: 'inky', glow: 'pulse', color: [180, 186, 186] },
+  ];
+  const even = { red: { t: 'even', o: ['CUL', 'MYC', 'FOR'] }, green: { t: 'even', o: ['CON', 'MAG', 'ANI'] }, blue: { t: 'even', o: ['DIS', 'SOC'] } };
+  const best = looks.map((g) => {
+    const st = baseStats({ ...g, alloc: even });
+    return Object.values(JOB_BY_ID).sort((a, b) => G.jobScore(st, b) - G.jobScore(st, a))[0];
+  });
+  assert.deepEqual(best.map((j) => j.id), ['dew_collector', 'mycologist', 'nest_tender', 'night_watcher']);
+  assert.equal(new Set(best.map((j) => j.family)).size, 4);
+});
+
+test('second colour and stem colour come from their palettes and are inherited', () => {
+  const pal = (list, rgb) => list.some((p) => Math.hypot(p.rgb[0] - rgb[0], p.rgb[1] - rgb[1], p.rgb[2] - rgb[2]) < 30);
+  for (const m of generateStarters('palettes')) {
+    assert.ok(pal(SECONDARY_PALETTE, m.genes.accent), 'second colour');
+    assert.ok(pal(STEM_PALETTE, m.genes.stemColor), 'stem colour');
+  }
+  const a = mk('pa', { accent: [208, 40, 52], stemColor: [132, 106, 86] });
+  const b = mk('pb', { accent: [112, 192, 240], stemColor: [232, 220, 196] });
+  let fromParent = 0;
+  for (let i = 0; i < 60; i++) {
+    const { offspring } = resolveBreeding(a, b, ctx('acc' + i));
+    const near = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]) < 12;
+    if (near(offspring.genes.accent, a.genes.accent) || near(offspring.genes.accent, b.genes.accent)) fromParent++;
+  }
+  // distinct second colours are passed on, not muddied together (bar the odd jump)
+  assert.ok(fromParent >= 50, `got ${fromParent}`);
+});
+
+test('schema 4 saves: mushrooms get a real second colour and a drab stem', () => {
+  const s = G.newGame({ now: NOW, seed: 'recolour', tzOffset: 0 });
+  const old = JSON.parse(serialize(s));
+  old.schemaVersion = 4;
+  for (const m of old.mushrooms) { m.genes.accent = [240, 232, 210]; m.genes.stemColor = [236, 224, 200]; }
+  const migrated = parseSave(JSON.stringify(old));
+  for (const m of migrated.mushrooms) {
+    assert.ok(SECONDARY_PALETTE.some((p) => p.rgb.join() === m.genes.accent.join()));
+    assert.ok(STEM_PALETTE.some((p) => p.rgb.join() === m.genes.stemColor.join()));
+  }
+  // stable: the same mushroom always gets the same colours
+  assert.deepEqual(parseSave(JSON.stringify(old)).mushrooms.map((m) => m.genes.accent), migrated.mushrooms.map((m) => m.genes.accent));
 });

@@ -1,6 +1,6 @@
 // Save/load, schema validation and migration (GDD 3, 18, 20).
 import { RESOURCE_IDS, STAGE_BY_ID, STRUCTURES } from '../content/world.js';
-import { STARTER_PALETTE } from '../content/attributes.js';
+import { STARTER_PALETTE, SECONDARY_PALETTE, STEM_PALETTE } from '../content/attributes.js';
 import { hash } from './rng.js';
 import { SCHEMA_VERSION } from './game.js';
 import { enforceLimits } from './genetics.js';
@@ -59,6 +59,22 @@ const MIGRATIONS = [
       for (const o of area.objects || []) if (o.def === 'breeding_nook') { o.def = 'breeding_pen'; o.prefab = false; }
     }
     obj.schemaVersion = 4;
+    return obj;
+  },
+  // v4 -> v5: the art overhaul gave every mushroom a real second colour (for
+  // its patterns) and a drab stem colour. The old near-white accents and
+  // stems are replaced with shades chosen from each mushroom's id.
+  (obj) => {
+    const recolour = (m) => {
+      if (!m?.genes) return;
+      m.genes.accent = SECONDARY_PALETTE[hash(m.uid, 'secondColour') % SECONDARY_PALETTE.length].rgb.slice();
+      m.genes.stemColor = STEM_PALETTE[hash(m.uid, 'stemColour') % STEM_PALETTE.length].rgb.slice();
+    };
+    // guests keep their colours: they belong to another forest's share code
+    for (const m of obj.mushrooms || []) recolour(m);
+    for (const v of obj.wildVisitors || []) recolour(v.mushroom);
+    for (const r of obj.breedings || []) { recolour(r.offspring); for (const p of r.parentSnapshots || []) recolour(p); }
+    obj.schemaVersion = 5;
     return obj;
   },
 ];

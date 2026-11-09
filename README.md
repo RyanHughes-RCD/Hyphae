@@ -78,8 +78,10 @@ node tools/import-sprites.mjs <folder of saved workshop docs>   # validates and 
 
 Keys: `structure:<art>`, `tile:<terrain>`, `cap:<shape>`, `stem:<shape>`,
 `marking:<pattern>`, `gills:<type>`, `face:default`, `custom:<name>`. Mushroom
-parts are colour-role masks (each mushroom recolours them from its genes);
-everything else is full colour. Custom decorations become buildable.
+parts are 30×36 colour-role masks (gills are 30×4) that each mushroom recolours
+from its genes: caps and markings are drawn with the cap's bottom on row 23 and
+move with the stem; stems stand on row 34 and their height sets the cap's.
+Everything else is full colour. Custom decorations become buildable.
 
 ## Art and font credits
 

@@ -5,7 +5,7 @@ import { AREA_W, AREA_H, STRUCTURES, JOB_BY_ID } from '../content/world.js';
 import { MUTATION_BY_ID } from '../content/genetics.js';
 import { getConfig } from '../config.js';
 import { drawTile, drawStructure, TILE } from './world.js';
-import { drawMushroom, SPRITE_W as FULL_W, SPRITE_H as FULL_H, MUSHROOM_SCALE, resourceColor } from './sprites.js';
+import { drawMushroom, mushroomSprite, SPRITE_W as FULL_W, SPRITE_H as FULL_H, MUSHROOM_SCALE, resourceColor } from './sprites.js';
 
 // mushrooms are drawn at 65% of their sprite size in the forest
 const SPRITE_W = FULL_W * MUSHROOM_SCALE;
@@ -777,7 +777,7 @@ export class ForestView {
     const sy = this.squishOf(a, t, rm);
     const sx = 1 / Math.sqrt(sy) * (sy < 1 ? 1 + (1 - sy) * 0.6 : 1);
     drawMushroom(ctx, m, a.x - FULL_W / 2, a.y - FULL_H, t, { smooth: true, size: MUSHROOM_SCALE, squish: { sx, sy }, flip: a.flip, mutationVisual: mv, reducedMotion: rm });
-    const top = a.y - SPRITE_H * sy;
+    const top = a.y - (FULL_H - mushroomSprite(m).top) * MUSHROOM_SCALE * sy;
     if (a.carry) { ctx.fillStyle = '#2a1a10'; ctx.fillRect(a.x - 2.5, top - 5, 5, 5); ctx.fillStyle = a.carry; ctx.fillRect(a.x - 1.5, top - 4, 3, 3); }
     if (a.mode === 'work' && !rm) {
       const col = ANIM_FX[a.anim] || '#fff';

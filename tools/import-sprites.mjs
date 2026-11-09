@@ -7,7 +7,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 export const ALPHA = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
-export const ROLE_CHARS = { cap: 'bld', stem: 'skrc', face: 'ep', marking: 'amwy', gills: 'gkLv' };
+export const ROLE_CHARS = { cap: 'hlbdD', stem: 'shkrcwW', face: 'ep', marking: 'amwy', gills: 'gkLvi' };
+// mushroom part frames (see src/render/sprites.js)
+export const PART_W = 30;
+export const PART_H = 36;
+export const GILL_H = 4;
 const PREFIX_CATEGORY = { structure: 'structure', tile: 'tile', cap: 'cap', stem: 'stem', marking: 'marking', gills: 'gills', face: 'face' };
 
 /** Validate one workshop doc; returns a clean sprite or throws with a readable reason. */
@@ -22,8 +26,8 @@ export function cleanSprite(doc) {
   if (!['color', 'roles'].includes(kind)) throw new Error(`${key}: unknown kind`);
   if (!Number.isInteger(w) || !Number.isInteger(h) || w < 1 || h < 1 || w > 64 || h > 64) throw new Error(`${key}: bad size`);
   if (category === 'tile' && (w !== 16 || h !== 16)) throw new Error(`${key}: tiles must be 16×16`);
-  if (['cap', 'stem', 'face', 'marking'].includes(category) && (w !== 24 || h !== 28)) throw new Error(`${key}: mushroom parts must be 24×28`);
-  if (category === 'gills' && (w !== 24 || h !== 2)) throw new Error(`${key}: gills must be 24×2`);
+  if (['cap', 'stem', 'face', 'marking'].includes(category) && (w !== PART_W || h !== PART_H)) throw new Error(`${key}: mushroom parts must be ${PART_W}×${PART_H}`);
+  if (category === 'gills' && (w !== PART_W || h !== GILL_H)) throw new Error(`${key}: gills must be ${PART_W}×${GILL_H}`);
   if (!Array.isArray(rows) || rows.length !== h || rows.some((r) => typeof r !== 'string' || r.length !== w)) throw new Error(`${key}: rows do not match the size`);
   const out = { name: String(doc.name || key).slice(0, 32), category, kind, w, h, rows };
   if (kind === 'color') {

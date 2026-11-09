@@ -1,14 +1,26 @@
 // Procedural pixel-art mushrooms built from modular gene layers (GDD 17).
+//
+// A mushroom is assembled from parts: the stem (which also sets how high the
+// cap sits), the cap (shaded per lobe with a top-left light), markings in the
+// mushroom's second colour, the underside, and a face. Cap and marking masks
+// are made in a reference frame with the cap's bottom on row REF_CB and moved
+// to wherever the stem puts the cap.
 import { shade, mix, css } from '../core/color.js';
-import { makeRng } from '../core/rng.js';
+import { makeRng, hash } from '../core/rng.js';
 import { RESOURCES } from '../content/world.js';
 
-export const SPRITE_W = 24;
-export const SPRITE_H = 28;
+export const SPRITE_W = 30;
+export const SPRITE_H = 36;
 // mushrooms are shown at 65% of their sprite size, in the forest and on screens
 export const MUSHROOM_SCALE = 0.65;
-const CX = 12;
-const CAP_BOTTOM = 14;
+const CX = 15;
+/** Lowest row of a stem (the mushroom's feet). */
+export const GROUND = 33;
+/** Where a cap's bottom row sits in the reference frame used by part masks. */
+export const REF_CB = 22;
+/** How tall each stem is (rows from under the cap to the ground). */
+export const STEM_LENGTH = { sturdy: 11, slender: 13, bulbous: 11, rooted: 11, ringed: 12, twisted: 12, crystal: 12, lanky: 15, stubby: 5, warty: 10 };
+const REF_EYE = REF_CB + 4;
 
 const cache = new Map();
 
@@ -55,12 +67,14 @@ export function overrideCanvas(key) {
 }
 
 /** Each character of a mushroom-part mask names a colour role ('.' = empty). */
+
+/** Each character of a mushroom-part mask names a colour role ('.' = empty). */
 export const PART_ROLES = {
-  cap: { b: 'cap colour', l: 'highlight', d: 'shade' },
-  stem: { s: 'stem colour', k: 'stem shade', r: 'ring', c: 'crystal' },
+  cap: { h: 'highlight', l: 'light', b: 'cap colour', d: 'shade', D: 'deep shade' },
+  stem: { s: 'stem colour', h: 'stem light', k: 'stem shade', r: 'ring', c: 'crystal', w: 'wart (second colour)', W: 'wart glint' },
   face: { e: 'eye', p: 'blush' },
-  marking: { a: 'accent', m: 'soft accent', w: 'pale glint', y: 'star' },
-  gills: { g: 'gill colour', k: 'gill shade', L: 'gill highlight', v: 'velvet' },
+  marking: { a: 'second colour', m: 'soft second colour', w: 'pale glint', y: 'star' },
+  gills: { g: 'gill colour', k: 'gill shade', L: 'gill highlight', v: 'velvet', i: 'ink' },
 };
 const roleAt = (ov, x, y) => (ov.rows[y] && ov.rows[y][x] !== undefined && ov.rows[y][x] !== '.' ? ov.rows[y][x] : null);
 
@@ -71,9 +85,14 @@ function makeCanvas(w, h) {
   return c;
 }
 
-// ---------- masks ----------
+const has = (m, x, y) => m.has(x + ',' + y);
+const pts = (m) => [...m].map((k) => k.split(',').map(Number));
+
+// ---------- cap masks (reference frame: bottom row = REF_CB) ----------
+
 function capMask(type) {
   const m = new Set();
+  const CB = REF_CB;
   const add = (x, y) => { if (x >= 0 && x < SPRITE_W && y >= 0 && y < SPRITE_H) m.add(x + ',' + y); };
   const ell = (cx, cy, rx, ry, yMax = 99, yMin = -99) => {
     for (let y = Math.floor(cy - ry); y <= Math.ceil(cy + ry); y++) {
@@ -83,86 +102,260 @@ function capMask(type) {
       }
     }
   };
+  const bell = (cx, bottom, hw, h, p = 0.7) => {
+    const y0 = Math.round(bottom - h);
+    for (let y = y0; y <= Math.round(bottom); y++) {
+      const t = (y - y0) / (Math.round(bottom) - y0);
+      const half = 1.2 + hw * Math.pow(t, p);
+      for (let x = Math.round(cx - half); x < Math.round(cx + half); x++) add(x, y);
+    }
+  };
   switch (type) {
     case 'flatcap':
-      ell(CX, 11.5, 11.5, 4); ell(CX, 9, 4, 2);
+      ell(CX, CB - 2.5, 11.5, 4); ell(CX, CB - 5, 4, 2);
       break;
     case 'bellcap':
-      for (let y = 3; y <= CAP_BOTTOM; y++) {
-        const t = (y - 3) / (CAP_BOTTOM - 3);
-        const hw = 3.2 + 7 * Math.pow(t, 0.8) + (y >= CAP_BOTTOM - 1 ? 1 : 0);
+      for (let y = CB - 11; y <= CB; y++) {
+        const t = (y - (CB - 11)) / 11;
+        const hw = 3.2 + 7 * Math.pow(t, 0.8) + (y >= CB - 1 ? 1 : 0);
         for (let x = Math.round(CX - hw); x < Math.round(CX + hw); x++) add(x, y);
       }
-      ell(CX, 4.5, 3.5, 2.5);
+      ell(CX, CB - 9.5, 3.5, 2.5);
       break;
     case 'wavycap':
-      ell(CX, 13, 11, 8, 12);
-      for (let x = 1; x < 23; x++) { const d = Math.round(Math.sin(x * 0.9) * 1.2 + 1.2); for (let y = 12; y <= 12 + d; y++) add(x, y); }
+      ell(CX, CB - 1, 11, 8, CB - 2);
+      for (let x = 3; x < 26; x++) { const d = Math.round(Math.sin((x - 2) * 0.9) * 1.2 + 1.2); for (let y = CB - 2; y <= CB - 2 + d; y++) add(x, y); }
       break;
     case 'conecap':
-      for (let y = 2; y <= CAP_BOTTOM; y++) {
-        const hw = 0.8 + (y - 2) * 0.82;
+      for (let y = CB - 12; y <= CB; y++) {
+        const hw = 0.8 + (y - (CB - 12)) * 0.82;
         for (let x = Math.round(CX - hw); x < Math.round(CX + hw); x++) add(x, y);
       }
       break;
     case 'clustercap':
-      ell(6.5, 12, 5.5, 4.5, 14); ell(17.5, 12, 5.5, 4.5, 14); ell(CX, 8, 6.5, 6, 13);
+      ell(CX - 5.5, CB - 2, 5.5, 4.5, CB); ell(CX + 5.5, CB - 2, 5.5, 4.5, CB); ell(CX, CB - 6, 6.5, 6, CB - 1);
       break;
     case 'shelfcap':
-      ell(13, 12, 10.5, 4, 14); ell(10, 7.5, 7, 3.2);
+      ell(CX + 1, CB - 2, 10.5, 4, CB); ell(CX - 2, CB - 6.5, 7, 3.2);
       break;
     case 'frillcap':
-      ell(CX, 13, 10, 9, 12);
-      for (let x = 1; x < 23; x++) { if (x % 2 === 0) { add(x, 13); add(x, 14); } else add(x, 13); }
+      ell(CX, CB - 1, 10, 9, CB - 2);
+      for (let x = 3; x < 25; x++) { add(x, CB - 1); if (x % 2 === 0) add(x, CB); }
       break;
     case 'lanterncap':
-      for (let y = 3; y <= CAP_BOTTOM; y++) {
-        const corner = y === 3 || y === CAP_BOTTOM ? 2 : y === 4 || y === CAP_BOTTOM - 1 ? 1 : 0;
+      for (let y = CB - 11; y <= CB; y++) {
+        const corner = y === CB - 11 || y === CB ? 2 : y === CB - 10 || y === CB - 1 ? 1 : 0;
         for (let x = CX - 7 + corner; x < CX + 7 - corner; x++) add(x, y);
       }
-      add(CX - 1, 2); add(CX, 2); add(CX - 1, 1); add(CX, 1);
+      add(CX - 1, CB - 12); add(CX, CB - 12); add(CX - 1, CB - 13); add(CX, CB - 13);
       break;
     case 'spirecap':
-      for (let y = 0; y <= CAP_BOTTOM; y++) {
-        const t = y / CAP_BOTTOM;
+      for (let y = CB - 14; y <= CB; y++) {
+        const t = (y - (CB - 14)) / 14;
         const hw = 0.6 + 7.5 * Math.pow(t, 2.1);
         for (let x = Math.round(CX - hw); x < Math.round(CX + hw); x++) add(x, y);
       }
       break;
+    case 'tuftcap':
+      // a tuft of glassy bells: a tall one in the middle, two on their own stalks
+      bell(CX, CB, 4.6, 7);
+      bell(CX - 9, CB + 5, 3.2, 5);
+      bell(CX + 8.5, CB + 2, 3.4, 5.5);
+      break;
+    case 'lumpcap':
+      // a low, lumpy crust
+      ell(CX, CB - 3.5, 9, 6.5, CB + 1); ell(CX - 6.5, CB - 1, 5.5, 4.5, CB + 1); ell(CX + 7, CB - 0.5, 5, 4.5, CB + 1);
+      ell(CX - 2.5, CB - 8.5, 4.5, 3.5); ell(CX + 4, CB - 7.5, 4, 3.5); ell(CX + 9.5, CB - 3.5, 2.5, 2.5);
+      break;
+    case 'tiltcap': {
+      // a wide dome worn at an angle, showing its underside on one side
+      const a = -0.33;
+      const cx = CX + 0.5;
+      const cy = CB - 1.5;
+      for (let y = CB - 14; y <= CB + 4; y++) {
+        for (let x = 0; x < SPRITE_W; x++) {
+          const dx = x + 0.5 - cx;
+          const dy = y + 0.5 - cy;
+          const u = dx * Math.cos(a) + dy * Math.sin(a);
+          const v = -dx * Math.sin(a) + dy * Math.cos(a);
+          if ((u / 11.5) ** 2 + (v / 9) ** 2 <= 1 && v <= 1.2) add(x, y);
+        }
+      }
+      break;
+    }
+    case 'inkcap':
+      // a tall shaggy bullet with a ragged hem
+      for (let y = CB - 17; y <= CB; y++) {
+        const t = (y - (CB - 17)) / 17;
+        const hw = 1.6 + 6.2 * Math.pow(t, 0.45);
+        for (let x = Math.round(CX - hw); x < Math.round(CX + hw); x++) add(x, y);
+      }
+      for (let x = CX - 7; x < CX + 7; x++) if ((x * 5) % 3 === 0) add(x, CB + 1);
+      break;
     case 'roundcap':
     default:
-      ell(CX, 13.5, 10.5, 10, 13);
-      for (let x = 2; x < 22; x++) add(x, 14);
+      ell(CX, CB - 0.5, 10.5, 10, CB - 1);
+      for (let x = 4; x < 26; x++) add(x, CB);
   }
   return m;
 }
 
-function stemMask(type) {
+// stalks under the tuft's side bells (reference frame), drawn down to the ground
+const TUFT_STALKS = [{ x: CX - 10, top: REF_CB + 6 }, { x: CX + 8, top: REF_CB + 3 }];
+
+/** Where the cap sits for a stem (its bottom row in the sprite). */
+function capBottomFor(capType, stemType, stemOv) {
+  if (capType === 'lumpcap') return GROUND - 2;
+  let cb;
+  if (stemOv) {
+    let top = GROUND;
+    for (let y = 0; y < SPRITE_H; y++) if (stemOv.rows[y] && /[^.]/.test(stemOv.rows[y])) { top = y; break; }
+    cb = top + 1;
+  } else cb = GROUND - (STEM_LENGTH[stemType] ?? 12);
+  // a tuft's side bells need room for their stalks
+  if (capType === 'tuftcap') cb = Math.min(cb, REF_CB);
+  return cb;
+}
+
+// ---------- stem masks (sprite frame) ----------
+
+function stemShape(type, cb) {
   const m = new Set();
   const add = (x, y) => m.add(x + ',' + y);
-  const bottom = 26;
-  for (let y = CAP_BOTTOM - 1; y <= bottom; y++) {
+  const top = cb - 1;
+  const len = GROUND - top;
+  const ringRow = top + Math.round(len * 0.4);
+  for (let y = top; y <= GROUND; y++) {
+    const t = (y - top) / len;
     let hw = 3;
     let off = 0;
     switch (type) {
       case 'sturdy': hw = 4; break;
       case 'slender': hw = 2; break;
-      case 'bulbous': hw = y > 20 ? 3 + Math.min(2, (y - 20) * 0.7) - (y === bottom ? 1 : 0) : 3; break;
-      case 'rooted': hw = 3; break;
-      case 'ringed': hw = y === 17 || y === 18 ? 5 : 3; break;
+      case 'bulbous': hw = y > GROUND - 6 ? 3 + Math.min(2, (y - (GROUND - 6)) * 0.7) - (y === GROUND ? 1 : 0) : 3; break;
+      case 'ringed': hw = y === ringRow || y === ringRow + 1 ? 5 : 3; break;
       case 'twisted': hw = 2.5; off = Math.round(Math.sin(y * 0.6) * 1.2); break;
-      case 'crystal': hw = 3; break;
+      case 'lanky': hw = y >= GROUND - 1 ? 2.5 : 1.5; break;
+      case 'stubby': hw = 4 + (y === GROUND ? 0.5 : 0); break;
+      case 'warty': hw = 3.2 + 1.6 * Math.sin(Math.PI * Math.min(1, t * 1.1)); break;
       default: hw = 3;
     }
     for (let x = Math.round(CX - hw + off); x < Math.round(CX + hw + off); x++) add(x, y);
   }
-  if (type === 'rooted') { add(CX - 4, 26); add(CX - 5, 27); add(CX + 3, 26); add(CX + 4, 27); add(CX - 1, 27); }
-  return m;
+  if (type === 'rooted') { add(CX - 4, GROUND); add(CX - 5, GROUND + 1); add(CX + 3, GROUND); add(CX + 4, GROUND + 1); add(CX - 1, GROUND + 1); }
+  return { m, top, ringRow };
 }
 
-const has = (m, x, y) => m.has(x + ',' + y);
+// warts on a warty stem: [dx, rows below the stem top]
+const WARTS = [[-6, 3], [4, 4.5], [-6, 7.5], [4, 8.5], [-2, 10.5], [1, 1.5]];
+
+/** Colour roles for a stem whose cap sits on row cb. */
+function stemRoleMap(type, cb) {
+  const { m, top, ringRow } = stemShape(type, cb);
+  const roles = new Map();
+  for (const [x, y] of pts(m)) {
+    let r = 's';
+    if (!has(m, x + 1, y) || y >= GROUND - 1 || y <= top + 1) r = 'k';
+    else if (!has(m, x - 1, y)) r = 'h';
+    roles.set(x + ',' + y, r);
+  }
+  if (type === 'ringed') for (let x = CX - 5; x < CX + 5; x++) roles.set(x + ',' + (ringRow + 1), 'r');
+  if (type === 'crystal') for (const [dx, dy] of [[-1, 5], [1, 7], [-2, 9], [0, 10]]) roles.set((CX + dx) + ',' + (top + dy), 'c');
+  if (type === 'warty') {
+    for (const [dx, dy] of WARTS) {
+      const y = top + Math.round(dy * (GROUND - top) / 11);
+      if (y >= GROUND - 1) continue;
+      const x = CX + dx;
+      // keep the face clear
+      if (y >= cb + 1 && y <= cb + 7 && x + 1 >= CX - 3 && x <= CX + 2) continue;
+      roles.set(x + ',' + (y - 1), 'W'); roles.set((x + 1) + ',' + (y - 1), 'w');
+      roles.set(x + ',' + y, 'w'); roles.set((x + 1) + ',' + y, 'w');
+    }
+  }
+  return roles;
+}
+
+// ---------- cap shading ----------
+
+/** Split a mask into its connected lobes. */
+function components(mask) {
+  const seen = new Set();
+  const out = [];
+  for (const k of mask) {
+    if (seen.has(k)) continue;
+    const comp = [];
+    const stack = [k];
+    seen.add(k);
+    while (stack.length) {
+      const c = stack.pop();
+      comp.push(c);
+      const [x, y] = c.split(',').map(Number);
+      for (const n of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) {
+        const nk = n.join(',');
+        if (mask.has(nk) && !seen.has(nk)) { seen.add(nk); stack.push(nk); }
+      }
+    }
+    out.push(comp.map((c) => c.split(',').map(Number)));
+  }
+  return out;
+}
+
+/** Colour roles for a cap: light from the top left, a dark hem, a soft shaded right side. */
+function capRoleMap(mask) {
+  const roles = new Map();
+  for (const comp of components(mask)) {
+    let minX = 99; let maxX = -1; let top = 99; let bot = -1;
+    for (const [x, y] of comp) { minX = Math.min(minX, x); maxX = Math.max(maxX, x); top = Math.min(top, y); bot = Math.max(bot, y); }
+    const w = maxX - minX + 1;
+    const h = bot - top + 1;
+    const hx = minX + w * 0.32;
+    const hy = top + h * 0.28;
+    const r = Math.max(1.2, Math.min(w, h) * 0.17);
+    const tall = h > w * 0.9;
+    for (const [x, y] of comp) {
+      const nx = (x - minX + 0.5) / w;
+      const ny = (y - top + 0.5) / h;
+      const d = Math.hypot(x + 0.5 - hx, (y + 0.5 - hy) * 1.25);
+      const check = (x + y) % 2 === 0;
+      let role = 'b';
+      if (!mask.has(x + ',' + (y + 1))) role = 'D';
+      else if (d < r) role = 'h';
+      else if (d < r * 1.7 || (d < r * 2.3 && check)) role = 'l';
+      else if (!mask.has((x + 1) + ',' + y) || nx > 0.8 || (tall && ny > 0.7)) role = 'd';
+      else if ((nx > 0.62 && ny > 0.45 && check) || (tall && ny > 0.5 && check)) role = 'd';
+      roles.set(x + ',' + y, role);
+    }
+  }
+  return roles;
+}
+
+const capColours = (c) => ({
+  h: mix(shade(c, 0.45), [255, 248, 220], 0.15),
+  l: shade(c, 0.2),
+  b: c,
+  d: mix(shade(c, -0.28), [70, 30, 110], 0.12),
+  D: mix(shade(c, -0.5), [50, 20, 90], 0.18),
+});
+
+const stemColours = (s, accent) => ({
+  s, h: shade(s, 0.18), k: mix(shade(s, -0.25), [60, 40, 70], 0.1), r: shade(s, -0.12), c: [150, 230, 255],
+  w: accent, W: mix(accent, [255, 255, 255], 0.55),
+});
+
+/** Colours for every part role, for a cap colour, second colour and stem colour (used by the Sprite Workshop too). */
+export function partColours(capC, accent, stemC) {
+  const g = shade(mix(stemC, capC, 0.25), -0.15);
+  return {
+    cap: capColours(capC),
+    stem: stemColours(stemC, accent),
+    face: { e: [40, 26, 30], p: [240, 150, 150] },
+    marking: { a: accent, m: mix(accent, capC, 0.3), w: mix(accent, [255, 255, 255], 0.55), y: [255, 250, 210] },
+    gills: { g, k: shade(g, -0.3), L: shade(g, 0.2), v: mix(g, [255, 220, 230], 0.3), i: mix(shade(capC, -0.6), [24, 18, 40], 0.6) },
+  };
+}
 
 // ---------- composition ----------
+
 export function mushroomSprite(m) {
   const g = m.genes;
   const key = JSON.stringify([g.cap, g.stem, g.markings, g.gills, g.glow, g.color, g.accent, g.stemColor, g.pattern]);
@@ -171,146 +364,217 @@ export function mushroomSprite(m) {
   const W = SPRITE_W;
   const H = SPRITE_H;
   const px = new Array(W * H).fill(null);
-  const set = (x, y, c) => { if (x >= 0 && y >= 0 && x < W && y < H) px[y * W + x] = c; };
+  const part = new Array(W * H).fill(null);
+  const inside = (x, y) => x >= 0 && y >= 0 && x < W && y < H;
+  const set = (x, y, c, p) => { if (inside(x, y)) { px[y * W + x] = c; part[y * W + x] = p; } };
   const capOv = spriteOverride('cap:' + g.cap);
   const stemOv = spriteOverride('stem:' + g.stem);
   const faceOv = spriteOverride('face:default');
   const markOv = spriteOverride('marking:' + g.markings);
   const gillOv = spriteOverride('gills:' + g.gills);
-  const maskOf = (ov) => {
-    const m = new Set();
-    for (let y = 0; y < Math.min(H, ov.rows.length); y++) for (let x = 0; x < W; x++) if (roleAt(ov, x, y)) m.add(x + ',' + y);
-    return m;
-  };
-  const cap = capOv ? maskOf(capOv) : capMask(g.cap);
-  const stem = stemOv ? maskOf(stemOv) : stemMask(g.stem);
   const rng = makeRng(g.pattern + 17);
 
   const capC = g.color;
-  const capLight = shade(capC, 0.35);
-  const capDark = shade(capC, -0.3);
   const accent = g.accent;
   const stemC = g.stemColor;
-  const stemDark = shade(stemC, -0.22);
-  const outline = shade(mix(capC, [20, 10, 30], 0.55), -0.55);
+  const CC = capColours(capC);
+  const SC = stemColours(stemC, accent);
 
-  // stem
+  // where everything sits
+  const cb = capBottomFor(g.cap, g.stem, stemOv);
+  const dy = cb - REF_CB;
+  const shift = (mask) => { const o = new Set(); for (const [x, y] of pts(mask)) if (inside(x, y + dy)) o.add(x + ',' + (y + dy)); return o; };
+
+  // cap mask and roles (reference frame), moved into place
+  let capRoles;
+  if (capOv) {
+    capRoles = new Map();
+    for (let y = 0; y < Math.min(H, capOv.rows.length); y++) for (let x = 0; x < W; x++) { const r = roleAt(capOv, x, y); if (r) capRoles.set(x + ',' + y, r); }
+  } else capRoles = capRoleMap(capMask(g.cap));
+  const cap = new Set();
+  const capRole = new Map();
+  for (const [k, r] of capRoles) { const [x, y] = k.split(',').map(Number); if (inside(x, y + dy)) { cap.add(x + ',' + (y + dy)); capRole.set(x + ',' + (y + dy), r); } }
+
+  // stem: drawn at its own length, then trimmed to the cap's underside or stretched up to it
+  let stemRoles;
   if (stemOv) {
-    const col = { s: stemC, k: stemDark, r: shade(stemC, -0.12), c: [150, 230, 255] };
-    for (const k of stem) { const [x, y] = k.split(',').map(Number); set(x, y, col[roleAt(stemOv, x, y)] || stemC); }
-  } else {
-    for (const k of stem) {
-      const [x, y] = k.split(',').map(Number);
-      const right = !has(stem, x + 1, y);
-      set(x, y, right || y > 24 ? stemDark : stemC);
-    }
-    if (g.stem === 'crystal') for (const [x, y] of [[CX - 1, 18], [CX + 1, 20], [CX - 2, 22], [CX, 23]]) set(x, y, [150, 230, 255]);
-    if (g.stem === 'ringed') for (let x = CX - 5; x < CX + 5; x++) set(x, 18, shade(stemC, -0.12));
+    stemRoles = new Map();
+    for (let y = 0; y < Math.min(H, stemOv.rows.length); y++) for (let x = 0; x < W; x++) { const r = roleAt(stemOv, x, y); if (r) stemRoles.set(x + ',' + y, r); }
+  } else stemRoles = stemRoleMap(g.stem, GROUND - (STEM_LENGTH[g.stem] ?? 12));
+  {
+    let sTop = H;
+    for (const k of stemRoles.keys()) sTop = Math.min(sTop, Number(k.split(',')[1]));
+    const topRow = [...stemRoles].filter(([k]) => Number(k.split(',')[1]) === sTop).map(([k, r]) => [Number(k.split(',')[0]), r]);
+    for (const k of [...stemRoles.keys()]) if (Number(k.split(',')[1]) < cb - 1) stemRoles.delete(k);
+    for (let y = cb - 1; y < sTop; y++) for (const [x, r] of topRow) stemRoles.set(x + ',' + y, r);
   }
-  // face on the stem
-  if (faceOv) {
-    const col = { e: [40, 26, 30], p: [240, 150, 150] };
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const r = roleAt(faceOv, x, y); if (r && col[r]) set(x, y, col[r]); }
-  } else {
-    const eyeY = 19;
-    set(CX - 2, eyeY, [40, 26, 30]); set(CX + 1, eyeY, [40, 26, 30]);
-    set(CX - 2, eyeY - 1, [40, 26, 30]); set(CX + 1, eyeY - 1, [40, 26, 30]);
-    set(CX - 3, eyeY + 1, [240, 150, 150]); set(CX + 2, eyeY + 1, [240, 150, 150]);
+  const stem = new Set(stemRoles.keys());
+  for (const [k, r] of stemRoles) { const [x, y] = k.split(',').map(Number); set(x, y, SC[r] || stemC, 'stem'); }
+  // the tuft's side bells stand on stalks of their own
+  if (g.cap === 'tuftcap') {
+    for (const s of TUFT_STALKS) {
+      for (let y = s.top + dy; y <= GROUND; y++) {
+        set(s.x, y, y <= s.top + dy || y >= GROUND - 1 ? SC.k : SC.h, 'stem'); set(s.x + 1, y, SC.k, 'stem');
+        stem.add(s.x + ',' + y); stem.add((s.x + 1) + ',' + y);
+      }
+    }
   }
 
-  // cap with shading
+  // cap
   let top = 99;
-  for (const k of cap) top = Math.min(top, Number(k.split(',')[1]));
-  for (const k of cap) {
-    const [x, y] = k.split(',').map(Number);
-    let c = capC;
-    if (capOv) c = { b: capC, l: capLight, d: capDark }[roleAt(capOv, x, y)] || capC;
-    else {
-      const hd = Math.hypot(x - (CX - 4), y - (top + 3));
-      if (hd < 3.2) c = capLight;
-      else if (!has(cap, x, y + 1) || !has(cap, x + 1, y) || y >= CAP_BOTTOM - 1) c = capDark;
-    }
-    set(x, y, c);
-  }
-  // markings
-  const capPts = [...cap].map((k) => k.split(',').map(Number)).filter(([x, y]) => has(cap, x, y - 1) && has(cap, x, y + 1) && has(cap, x - 1, y) && has(cap, x + 1, y) && y < CAP_BOTTOM - 1);
-  const mark = (x, y, c = accent) => { if (has(cap, x, y) && y < CAP_BOTTOM - 1) set(x, y, c); };
+  let minX = 99;
+  let maxX = -1;
+  for (const [x, y] of pts(cap)) { top = Math.min(top, y); minX = Math.min(minX, x); maxX = Math.max(maxX, x); }
+  for (const [k, r] of capRole) { const [x, y] = k.split(',').map(Number); set(x, y, CC[r] || capC, 'cap'); }
+
+  // markings, in the second colour
+  const capPts = pts(cap).filter(([x, y]) => has(cap, x, y - 1) && has(cap, x, y + 1) && has(cap, x - 1, y) && has(cap, x + 1, y));
+  const hem = (x, y) => !has(cap, x, y + 1);
+  const mark = (x, y, c = accent) => { if (has(cap, x, y) && !hem(x, y)) set(x, y, c, 'cap'); };
+  const soft = mix(accent, capC, 0.3);
+  const glint = mix(accent, [255, 255, 255], 0.55);
   if (markOv) {
-    // an edited marking is a stamp, clipped to the inside of the cap
-    const col = { a: accent, m: mix(accent, capC, 0.3), w: mix(capC, [255, 255, 255], 0.35), y: [255, 250, 210] };
-    const inside = new Set(capPts.map(([x, y]) => x + ',' + y));
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const r = roleAt(markOv, x, y); if (r && col[r] && inside.has(x + ',' + y)) set(x, y, col[r]); }
-  } else switch (g.markings) {
-    case 'spots':
-      for (let i = 0; i < 5; i++) {
-        const [x, y] = rng.pick(capPts) || [CX, 8];
-        mark(x, y); mark(x + 1, y); mark(x, y + 1); mark(x + 1, y + 1);
+    // an edited marking is a stamp, moved with the cap and clipped to its inside
+    const col = { a: accent, m: soft, w: glint, y: [255, 250, 210] };
+    const ins = new Set(capPts.map(([x, y]) => x + ',' + y));
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const r = roleAt(markOv, x, y); if (r && col[r] && ins.has(x + ',' + (y + dy))) set(x, y + dy, col[r], 'cap'); }
+  } else {
+    const nSpots = Math.max(3, Math.round(capPts.length / 45));
+    switch (g.markings) {
+      case 'spots':
+        for (let i = 0; i < nSpots; i++) {
+          const [x, y] = rng.pick(capPts) || [CX, cb - 6];
+          mark(x, y); mark(x + 1, y); mark(x, y + 1); mark(x + 1, y + 1);
+        }
+        break;
+      case 'stripes':
+        for (const [x, y] of capPts) if ((x + Math.floor(y / 3)) % 4 === 0) mark(x, y, mix(accent, capC, 0.2));
+        break;
+      case 'speckles':
+        for (const [x, y] of capPts) if (rng.chance(0.13)) mark(x, y);
+        break;
+      case 'rings':
+        for (const [x, y] of capPts) { const d = Math.round(Math.hypot(x - CX, (y - cb) * 1.3)); if (d % 4 === 0) mark(x, y, mix(accent, capC, 0.2)); }
+        break;
+      case 'patches':
+        for (let i = 0; i < 3; i++) {
+          const [cx, cy] = rng.pick(capPts) || [CX, cb - 6];
+          for (const [x, y] of capPts) if (Math.hypot(x - cx, y - cy) < 2.4) mark(x, y, soft);
+        }
+        break;
+      case 'constellation': {
+        const stars = Array.from({ length: 4 }, () => rng.pick(capPts) || [CX, cb - 6]);
+        for (let i = 0; i < stars.length - 1; i++) {
+          const [x0, y0] = stars[i];
+          const [x1, y1] = stars[i + 1];
+          const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0));
+          for (let s = 1; s < n; s++) mark(Math.round(x0 + ((x1 - x0) * s) / n), Math.round(y0 + ((y1 - y0) * s) / n), soft);
+        }
+        for (const [x, y] of stars) mark(x, y, glint);
+        break;
       }
-      break;
-    case 'stripes':
-      for (const [x, y] of capPts) if ((x + Math.floor(y / 3)) % 4 === 0) mark(x, y, mix(accent, capC, 0.25));
-      break;
-    case 'speckles':
-      for (const [x, y] of capPts) if (rng.chance(0.13)) mark(x, y);
-      break;
-    case 'rings':
-      for (const [x, y] of capPts) { const d = Math.round(Math.hypot(x - CX, (y - CAP_BOTTOM) * 1.3)); if (d % 4 === 0) mark(x, y, mix(accent, capC, 0.3)); }
-      break;
-    case 'patches':
-      for (let i = 0; i < 3; i++) {
-        const [cx, cy] = rng.pick(capPts) || [CX, 8];
-        for (const [x, y] of capPts) if (Math.hypot(x - cx, y - cy) < 2.4) mark(x, y, mix(accent, capC, 0.35));
+      case 'beads': {
+        // glossy droplets that bulge past the cap's edge
+        const all = pts(cap).filter(([x, y]) => !hem(x, y));
+        const n = Math.max(6, Math.round(all.length / 16));
+        const dark = shade(accent, -0.42);
+        const SMALL = [[0, 0, glint], [1, 0, accent], [0, 1, accent], [1, 1, dark]];
+        const BIG = [[0, -1, accent], [1, -1, accent], [-1, 0, accent], [0, 0, glint], [1, 0, accent], [2, 0, accent], [-1, 1, accent], [0, 1, accent], [1, 1, accent], [2, 1, dark], [0, 2, dark], [1, 2, dark]];
+        for (let i = 0; i < n; i++) {
+          const [x, y] = rng.pick(all) || [CX, cb - 6];
+          const bead = rng.chance(0.45) ? BIG : SMALL;
+          for (const [ox, oy, c] of bead) {
+            const bx = x + ox;
+            const by = y + oy;
+            const near = has(cap, bx, by) || has(cap, bx, by + 1) || has(cap, bx - 1, by) || has(cap, bx + 1, by);
+            if (near && !hem(bx, by) && (has(cap, bx, by) || !has(stem, bx, by))) set(bx, by, c, 'cap');
+          }
+        }
+        break;
       }
-      break;
-    case 'constellation': {
-      const stars = Array.from({ length: 4 }, () => rng.pick(capPts) || [CX, 8]);
-      for (let i = 0; i < stars.length - 1; i++) {
-        const [x0, y0] = stars[i];
-        const [x1, y1] = stars[i + 1];
-        const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0));
-        for (let s = 1; s < n; s++) mark(Math.round(x0 + ((x1 - x0) * s) / n), Math.round(y0 + ((y1 - y0) * s) / n), mix(capC, [255, 255, 255], 0.35));
-      }
-      for (const [x, y] of stars) mark(x, y, [255, 250, 210]);
-      break;
+      case 'shaggy':
+        // rows of ragged upturned scales
+        for (let y = top + 2; y < cb - 1; y += 3) {
+          const off = ((y - top) / 3) % 2 ? 2 : 0;
+          for (let x = minX + 1 + off; x <= maxX - 1; x += 4) {
+            if (!has(cap, x, y) || !has(cap, x - 1, y - 1) || !has(cap, x + 1, y - 1)) continue;
+            mark(x, y, accent); mark(x - 1, y - 1, soft); mark(x + 1, y - 1, soft);
+          }
+        }
+        break;
+      case 'gloss':
+        // a wet shine along each lobe's upper-left edge, tinted by the second colour
+        for (const [x, y] of pts(cap)) {
+          if (hem(x, y)) continue;
+          const edge = !has(cap, x - 1, y - 1) && (!has(cap, x - 1, y) || !has(cap, x, y - 1));
+          if (edge && capRole.get(x + ',' + y) !== 'd' && capRole.get(x + ',' + y) !== 'D') {
+            set(x, y, glint, 'cap');
+            if (has(cap, x + 1, y + 1) && !hem(x + 1, y + 1)) set(x + 1, y + 1, mix(accent, capC, 0.45), 'cap');
+          }
+        }
+        for (const comp of components(cap)) {
+          let cx0 = 99; let cy0 = 99; let cx1 = -1;
+          for (const [x, y] of comp) { cx0 = Math.min(cx0, x); cy0 = Math.min(cy0, y); cx1 = Math.max(cx1, x); }
+          const sx = Math.round(cx0 + (cx1 - cx0) * 0.62);
+          const sy = cy0 + 2;
+          if (has(cap, sx, sy) && !hem(sx, sy)) set(sx, sy, [255, 255, 255], 'cap');
+        }
+        break;
+      default:
+        break;
     }
-    default:
-      break;
   }
-  // gills / underside band
+
+  // underside: gills (and drips) under each column of cap
   const gillBase = shade(mix(stemC, capC, 0.25), -0.15);
-  const gillDark = shade(gillBase, -0.3);
-  for (let x = 0; x < W; x++) {
+  const GC = { g: gillBase, k: shade(gillBase, -0.3), L: shade(gillBase, 0.2), v: mix(gillBase, [255, 220, 230], 0.3), i: mix(shade(capC, -0.6), [24, 18, 40], 0.6) };
+  for (let x = minX + 1; x < maxX; x++) {
     let y = -1;
-    for (let yy = CAP_BOTTOM + 1; yy >= 0; yy--) if (has(cap, x, yy)) { y = yy; break; }
-    if (y < 0 || Math.abs(x - CX) > 9) continue;
+    for (let yy = H - 1; yy >= 0; yy--) if (has(cap, x, yy)) { y = yy; break; }
+    if (y < 0) continue;
     const under = y + 1;
-    if (has(cap, x, under)) continue;
-    if (gillOv) {
-      const col = { g: gillBase, k: gillDark, L: shade(gillBase, 0.2), v: mix(gillBase, [255, 220, 230], 0.3) };
-      const r0 = roleAt(gillOv, x, 0);
-      const r1 = roleAt(gillOv, x, 1);
-      if (r0 && col[r0] && !(r0 === 'v' && has(stem, x, under))) set(x, under, col[r0]);
-      if (r1 && col[r1] && !has(stem, x, under + 1)) set(x, under + 1, col[r1]);
-      continue;
-    }
-    let c = gillBase;
-    switch (g.gills) {
-      case 'fine': c = x % 2 ? gillBase : gillDark; break;
-      case 'deep': c = gillDark; if (x % 2 && !has(stem, x, under + 1)) set(x, under + 1, gillDark); break;
-      case 'pored': c = x % 3 === 0 ? gillDark : gillBase; break;
-      case 'ridged': c = x % 2 === 0 ? shade(gillBase, 0.2) : gillDark; break;
-      case 'toothed': c = gillBase; if (x % 3 === 1 && !has(stem, x, under + 1)) set(x, under + 1, gillDark); break;
-      case 'velvet': c = mix(gillBase, [255, 220, 230], 0.3); break;
-      default: break;
-    }
-    if (!has(stem, x, under) || g.gills !== 'velvet') set(x, under, c);
+    if (has(cap, x, under) || under > GROUND) continue;
+    const put = (yy, r) => {
+      if (!r || !GC[r] || yy > GROUND || has(cap, x, yy)) return;
+      if (has(stem, x, yy) && (yy > under || r === 'v' || r === 'i')) return;
+      set(x, yy, GC[r], 'cap');
+    };
+    if (gillOv) { for (let k = 0; k < 4; k++) put(under + k, roleAt(gillOv, x, k)); continue; }
+    const rows = gillColumn(g.gills, x);
+    rows.forEach((r, k) => put(under + k, r));
   }
-  // outline
-  const filled = (x, y) => x >= 0 && y >= 0 && x < W && y < H && px[y * W + x] !== null;
+
+  // face: on the stem, or on the cap when the stem hides beneath it
+  let vt = cb;
+  while (vt <= GROUND && part[vt * W + CX] !== 'stem') vt++;
+  const onCap = g.cap === 'lumpcap' || GROUND - vt < 4;
+  const eyeY = onCap ? cb - 4 : vt + Math.min(5, Math.max(1, Math.round((GROUND - vt) * 0.3)));
+  const body = (x, y) => (onCap ? has(cap, x, y) : has(stem, x, y));
+  const faceCol = { e: [40, 26, 30], p: [240, 150, 150] };
+  if (faceOv) {
+    const fdy = eyeY - REF_EYE;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const r = roleAt(faceOv, x, y); if (r && faceCol[r] && body(x, y + fdy)) set(x, y + fdy, faceCol[r], onCap ? 'cap' : 'stem'); }
+  } else {
+    let wl = 0;
+    while (body(CX - wl - 1, eyeY)) wl++;
+    let wr = 0;
+    while (body(CX + wr + 1, eyeY)) wr++;
+    const narrow = wl + wr < 5;
+    const ex = narrow ? [CX - 1, CX + 1] : [CX - 2, CX + 1];
+    for (const x of ex) { if (body(x, eyeY)) set(x, eyeY, faceCol.e, 'face'); if (body(x, eyeY - 1)) set(x, eyeY - 1, faceCol.e, 'face'); }
+    if (!narrow) for (const x of [ex[0] - 1, ex[1] + 1]) if (body(x, eyeY + 1)) set(x, eyeY + 1, faceCol.p, 'face');
+  }
+
+  // outline: dark cap edge around the cap, dark stem edge around the stem
+  const capLine = mix(shade(capC, -0.72), [20, 10, 34], 0.45);
+  const stemLine = mix(shade(stemC, -0.7), [24, 16, 30], 0.4);
+  const filled = (x, y) => inside(x, y) && px[y * W + x] !== null;
   const out = px.slice();
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     if (filled(x, y)) continue;
-    if (filled(x - 1, y) || filled(x + 1, y) || filled(x, y - 1) || filled(x, y + 1)) out[y * W + x] = outline;
+    const nb = [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]].filter(([a, b]) => filled(a, b));
+    if (!nb.length) continue;
+    out[y * W + x] = nb.some(([a, b]) => part[b * W + a] === 'cap') ? capLine : stemLine;
   }
   // rasterize
   const c = makeCanvas(W, H);
@@ -336,10 +600,29 @@ export function mushroomSprite(m) {
     }
   }
   sctx.putImageData(simg, 0, 0);
-  const res = { canvas: c, silhouette: sil, capColor: capC, top };
+  const res = { canvas: c, silhouette: sil, capColor: capC, top, capMid: Math.round((top + cb) / 2), dy, faceDy: eyeY - REF_EYE };
   cache.set(key, res);
   if (cache.size > 400) cache.delete(cache.keys().next().value);
   return res;
+}
+
+/** Underside roles for one column: [right under the cap, then up to three rows hanging below]. */
+function gillColumn(type, x) {
+  switch (type) {
+    case 'fine': return [x % 2 ? 'g' : 'k'];
+    case 'deep': return ['k', x % 2 ? 'k' : null];
+    case 'pored': return [x % 3 === 0 ? 'k' : 'g'];
+    case 'ridged': return [x % 2 === 0 ? 'L' : 'k'];
+    case 'toothed': return ['g', x % 3 === 1 ? 'k' : null];
+    case 'velvet': return ['v'];
+    case 'inky': {
+      // ink gathers along the hem and drips
+      const h = hash('ink', x) % 7;
+      const len = h < 3 ? 0 : h < 5 ? 1 : h < 6 ? 2 : 3;
+      return ['i', ...Array.from({ length: len }, () => 'i')];
+    }
+    default: return ['g'];
+  }
 }
 
 // ---------- defaults for the Sprite Workshop (role masks from the procedural rules) ----------
@@ -350,58 +633,52 @@ function gridRows(w, h, fn) {
   return rows;
 }
 
+/** A cap in the reference frame (its bottom on row REF_CB); the stem decides where it ends up. */
 export function defaultCapRoles(type) {
-  const cap = capMask(type);
-  let top = 99;
-  for (const k of cap) top = Math.min(top, Number(k.split(',')[1]));
-  return gridRows(SPRITE_W, SPRITE_H, (x, y) => {
-    if (!has(cap, x, y)) return null;
-    if (Math.hypot(x - (CX - 4), y - (top + 3)) < 3.2) return 'l';
-    if (!has(cap, x, y + 1) || !has(cap, x + 1, y) || y >= CAP_BOTTOM - 1) return 'd';
-    return 'b';
-  });
+  const roles = capRoleMap(capMask(type));
+  return gridRows(SPRITE_W, SPRITE_H, (x, y) => roles.get(x + ',' + y));
 }
 
+/** A stem, drawn where it stands; its top row decides how high the cap sits. */
 export function defaultStemRoles(type) {
-  const stem = stemMask(type);
-  const crystal = new Set([[CX - 1, 18], [CX + 1, 20], [CX - 2, 22], [CX, 23]].map((p) => p.join(',')));
-  return gridRows(SPRITE_W, SPRITE_H, (x, y) => {
-    const ringRow = type === 'ringed' && y === 18 && x >= CX - 5 && x < CX + 5;
-    if (type === 'crystal' && crystal.has(x + ',' + y)) return 'c';
-    if (ringRow) return 'r';
-    if (!has(stem, x, y)) return null;
-    return !has(stem, x + 1, y) || y > 24 ? 'k' : 's';
-  });
+  const roles = stemRoleMap(type, GROUND - (STEM_LENGTH[type] ?? 12));
+  return gridRows(SPRITE_W, SPRITE_H, (x, y) => roles.get(x + ',' + y));
 }
 
+/** The face, for a cap in the reference frame; it moves with the stem. */
 export function defaultFaceRoles() {
-  const e = new Set([[CX - 2, 19], [CX + 1, 19], [CX - 2, 18], [CX + 1, 18]].map((p) => p.join(',')));
-  const p = new Set([[CX - 3, 20], [CX + 2, 20]].map((q) => q.join(',')));
+  const e = new Set([[CX - 2, REF_EYE], [CX + 1, REF_EYE], [CX - 2, REF_EYE - 1], [CX + 1, REF_EYE - 1]].map((p) => p.join(',')));
+  const p = new Set([[CX - 3, REF_EYE + 1], [CX + 2, REF_EYE + 1]].map((q) => q.join(',')));
   return gridRows(SPRITE_W, SPRITE_H, (x, y) => (e.has(x + ',' + y) ? 'e' : p.has(x + ',' + y) ? 'p' : null));
 }
 
-/** A marking stamp: the procedural pattern laid over every cap pixel (one fixed layout). */
+/** A marking stamp in the reference frame: the procedural pattern laid over the cap area (one fixed layout). */
 export function defaultMarkingRoles(type) {
   const area = [];
-  for (let y = 1; y < CAP_BOTTOM - 1; y++) for (let x = 2; x < SPRITE_W - 2; x++) area.push([x, y]);
+  for (let y = 2; y < REF_CB - 1; y++) for (let x = 3; x < SPRITE_W - 3; x++) area.push([x, y]);
   const rng = makeRng(4242);
   const out = new Map();
   const mark = (x, y, r = 'a') => out.set(x + ',' + y, r);
   switch (type) {
-    case 'spots': for (let i = 0; i < 6; i++) { const [x, y] = rng.pick(area); mark(x, y); mark(x + 1, y); mark(x, y + 1); mark(x + 1, y + 1); } break;
+    case 'spots': for (let i = 0; i < 7; i++) { const [x, y] = rng.pick(area); mark(x, y); mark(x + 1, y); mark(x, y + 1); mark(x + 1, y + 1); } break;
     case 'stripes': for (const [x, y] of area) if ((x + Math.floor(y / 3)) % 4 === 0) mark(x, y, 'm'); break;
     case 'speckles': for (const [x, y] of area) if (rng.chance(0.13)) mark(x, y); break;
-    case 'rings': for (const [x, y] of area) { const d = Math.round(Math.hypot(x - CX, (y - CAP_BOTTOM) * 1.3)); if (d % 4 === 0) mark(x, y, 'm'); } break;
+    case 'rings': for (const [x, y] of area) { const d = Math.round(Math.hypot(x - CX, (y - REF_CB) * 1.3)); if (d % 4 === 0) mark(x, y, 'm'); } break;
     case 'patches': for (let i = 0; i < 3; i++) { const [cx, cy] = rng.pick(area); for (const [x, y] of area) if (Math.hypot(x - cx, y - cy) < 2.4) mark(x, y, 'm'); } break;
+    case 'beads': for (let i = 0; i < 9; i++) { const [x, y] = rng.pick(area); mark(x, y, 'w'); mark(x + 1, y); mark(x, y + 1); mark(x + 1, y + 1, 'm'); } break;
+    case 'shaggy':
+      for (let y = 4; y < REF_CB - 1; y += 3) for (let x = 4 + (((y - 4) / 3) % 2 ? 2 : 0); x < SPRITE_W - 4; x += 4) { mark(x, y); mark(x - 1, y - 1, 'm'); mark(x + 1, y - 1, 'm'); }
+      break;
+    case 'gloss': for (const [x, y] of [[8, 12], [9, 11], [10, 10], [11, 9], [12, 9], [13, 8], [9, 12], [10, 11]]) mark(x, y, 'w'); mark(18, 10, 'y'); break;
     case 'constellation': {
-      const stars = [[7, 5], [11, 3], [15, 7], [17, 10]];
+      const stars = [[10, 13], [14, 11], [18, 15], [20, 18]];
       for (let i = 0; i < stars.length - 1; i++) {
         const [x0, y0] = stars[i];
         const [x1, y1] = stars[i + 1];
         const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0));
-        for (let k = 1; k < n; k++) mark(Math.round(x0 + ((x1 - x0) * k) / n), Math.round(y0 + ((y1 - y0) * k) / n), 'w');
+        for (let k = 1; k < n; k++) mark(Math.round(x0 + ((x1 - x0) * k) / n), Math.round(y0 + ((y1 - y0) * k) / n), 'm');
       }
-      for (const [x, y] of stars) mark(x, y, 'y');
+      for (const [x, y] of stars) mark(x, y, 'w');
       break;
     }
     default: break;
@@ -409,11 +686,10 @@ export function defaultMarkingRoles(type) {
   return gridRows(SPRITE_W, SPRITE_H, (x, y) => out.get(x + ',' + y));
 }
 
-/** Gills: two rows under the cap — the underside, and anything hanging below it. */
+/** Underside: four rows under the cap — the underside itself, and anything hanging below it. */
 export function defaultGillRoles(type) {
-  const row0 = (x) => ({ fine: x % 2 ? 'g' : 'k', deep: 'k', pored: x % 3 === 0 ? 'k' : 'g', ridged: x % 2 === 0 ? 'L' : 'k', toothed: 'g', velvet: 'v' }[type] || 'g');
-  const row1 = (x) => (type === 'deep' ? (x % 2 ? 'k' : null) : type === 'toothed' ? (x % 3 === 1 ? 'k' : null) : null);
-  return [gridRows(SPRITE_W, 1, (x) => row0(x))[0], gridRows(SPRITE_W, 1, (x) => row1(x))[0]];
+  const cols = Array.from({ length: SPRITE_W }, (_, x) => gillColumn(type, x));
+  return Array.from({ length: 4 }, (_, k) => cols.map((c) => c[k] || '.').join(''));
 }
 
 const tintCache = new Map();
@@ -459,7 +735,7 @@ export function drawMushroom(ctx, m, x, y, t = 0, opts = {}) {
   let lvl = GLOW_LEVEL[m.genes.glow] || 0;
   if (lvl) {
     if (m.genes.glow === 'pulse' && !rm) lvl *= 0.6 + 0.4 * Math.sin(t * 3);
-    const gy = -(SPRITE_H - 9) * sy;
+    const gy = -(SPRITE_H - spr.capMid) * sy;
     const grd = ctx.createRadialGradient(0, gy, 2, 0, gy, 16);
     grd.addColorStop(0, css(shade(spr.capColor, 0.5), lvl));
     grd.addColorStop(1, css(spr.capColor, 0));

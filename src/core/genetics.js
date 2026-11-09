@@ -2,7 +2,7 @@
 import { getConfig, STATS, COLOR_GROUPS } from '../config.js';
 import {
   ATTRIBUTE_BY_ID, CATEGORIES, attributesIn, ALLOC_TEMPLATE_IDS, STARTER_PALETTE,
-  TEMPERAMENTS, NAME_PARTS,
+  SECONDARY_PALETTE, STEM_PALETTE, TEMPERAMENTS, NAME_PARTS,
 } from '../content/attributes.js';
 import { PERKS, PERK_BY_ID, MUTATIONS, MUTATION_BY_ID } from '../content/genetics.js';
 import { makeRng, subRng, hashHex } from './rng.js';
@@ -32,8 +32,8 @@ function randomGenes(rng, tiers, color) {
   // the second colour gene: hidden unless it happens to resemble the shown one
   g.colorAlleles = [color.slice(), jitter(rng.pick(STARTER_PALETTE).rgb, rng, 20)];
   g.alloc = randomAlloc(rng);
-  g.accent = jitter([240, 232, 210], rng, 20);
-  g.stemColor = jitter([236, 224, 200], rng, 18);
+  g.accent = jitter(rng.pick(SECONDARY_PALETTE).rgb, rng, 14);
+  g.stemColor = jitter(rng.pick(STEM_PALETTE).rgb, rng, 8);
   g.pattern = rng.int(0, 99999);
   return g;
 }
@@ -122,13 +122,13 @@ export function curatedStarters(seed, forest = {}, now = 0) {
     genes: { ...genes, colorAlleles: [genes.color.slice(), [[84, 104, 176], [178, 54, 40], [104, 150, 62]][i]] }, temperament,
     origin: { kind: 'starter', forestId: forest.id, forestName: forest.name },
   });
-  const base = { accent: [240, 232, 210], stemColor: [236, 224, 200], pattern: 7 };
+  const base = { pattern: 7 };
   return [
-    mk(0, 'Bramble', { ...base, cap: 'bellcap', stem: 'rooted', markings: 'plain', gills: 'fine', glow: 'none', color: [178, 54, 40],
+    mk(0, 'Bramble', { ...base, accent: [238, 196, 72], stemColor: [206, 184, 150], cap: 'bellcap', stem: 'rooted', markings: 'plain', gills: 'fine', glow: 'none', color: [178, 54, 40],
       alloc: { red: { t: 'lean', o: ['CUL', 'MYC', 'FOR'] }, green: { t: 'even', o: ['ANI', 'CON', 'MAG'] }, blue: { t: 'even', o: ['DIS', 'SOC'] } } }, 'gentle'),
-    mk(1, 'Pipkin', { ...base, cap: 'flatcap', stem: 'slender', markings: 'stripes', gills: 'pored', glow: 'none', color: [104, 150, 62],
+    mk(1, 'Pipkin', { ...base, accent: [250, 236, 120], stemColor: [178, 178, 142], cap: 'flatcap', stem: 'slender', markings: 'stripes', gills: 'pored', glow: 'none', color: [104, 150, 62],
       alloc: { red: { t: 'focus', o: ['FOR', 'CUL', 'MYC'] }, green: { t: 'lean', o: ['CON', 'ANI', 'MAG'] }, blue: { t: 'even', o: ['DIS', 'SOC'] } } }, 'industrious'),
-    mk(2, 'Wisplet', { ...base, cap: 'conecap', stem: 'bulbous', markings: 'speckles', gills: 'deep', glow: 'faint', color: [84, 104, 176],
+    mk(2, 'Wisplet', { ...base, accent: [112, 192, 240], stemColor: [152, 148, 154], cap: 'conecap', stem: 'bulbous', markings: 'speckles', gills: 'deep', glow: 'faint', color: [84, 104, 176],
       alloc: { red: { t: 'focus', o: ['MYC', 'CUL', 'FOR'] }, green: { t: 'focus', o: ['MAG', 'CON', 'ANI'] }, blue: { t: 'lean', o: ['SOC', 'DIS'] } } }, 'curious'),
   ];
 }
@@ -136,8 +136,8 @@ export function curatedStarters(seed, forest = {}, now = 0) {
 // ---------- wild visitors (GDD 5.6) ----------
 
 const HABITAT_ATTRS = {
-  flowers: ['frillcap', 'patches'], shade: ['twisted', 'pulse'], stone: ['ridged'], log: ['shelfcap'],
-  water: ['rings', 'soft'], moss: ['ringed'], damp: ['toothed'], glow: ['soft', 'pulse'],
+  flowers: ['frillcap', 'patches', 'tiltcap', 'warty'], shade: ['twisted', 'pulse', 'shaggy', 'inky'], stone: ['ridged'], log: ['shelfcap', 'lumpcap'],
+  water: ['rings', 'soft', 'tuftcap', 'gloss'], moss: ['ringed'], damp: ['toothed', 'lumpcap', 'beads'], glow: ['soft', 'pulse'],
 };
 
 export function generateWildVisitor(seed, habitats, now) {
@@ -196,6 +196,19 @@ function blend(rng, ca, cb, cfg, jitterAmt) {
   const [lo, hi] = cfg.inheritance.colorBlendRange;
   const t = rng.range(lo, hi);
   return ca.map((c, i) => clamp255(c + (cb[i] - c) * t + rng.int(-jitterAmt, jitterAmt)));
+}
+
+/**
+ * Second colour and stem colour: similar parent colours blend, different ones
+ * pass on one or the other. Now and then the colour jumps to another shade
+ * from its palette.
+ */
+function inheritShade(rng, ca, cb, variationOn, jumpChance, palette, j) {
+  let out;
+  if (rgbDist(ca, cb) < 70) out = blend(rng, ca, cb, getConfig(), 4);
+  else out = (rng.chance(0.5) ? ca : cb).map((c) => clamp255(c + rng.int(-4, 4)));
+  if (variationOn && rng.chance(jumpChance)) out = jitter(rng.pick(palette).rgb, rng, j);
+  return out;
 }
 
 export function colorAllelesOf(genes) {
@@ -277,8 +290,8 @@ function inheritColor(rng, a, b, ctx, cfg, log) {
   }
   return {
     color, colorAlleles: alleles, alloc,
-    accent: blend(rng, a.genes.accent, b.genes.accent, cfg, 8),
-    stemColor: blend(rng, a.genes.stemColor, b.genes.stemColor, cfg, 8),
+    accent: inheritShade(rng, a.genes.accent, b.genes.accent, variationOn, ci.colorSportChance * 2 * mischief, SECONDARY_PALETTE, 10),
+    stemColor: inheritShade(rng, a.genes.stemColor, b.genes.stemColor, variationOn, ci.colorSportChance * mischief, STEM_PALETTE, 6),
     pattern: rng.int(0, 99999),
   };
 }

@@ -2,7 +2,7 @@
 
 ## A cozy breeding, collecting, and forest-life game
 
-**Game Design Document | Version 0.8 | November 2026**
+**Game Design Document | Version 0.9 | November 2026**
 
 > **Design direction:** Begin with three ordinary mushrooms. Breed them,
 > generation by generation, into prized specialists. Give them meaningful
@@ -25,6 +25,7 @@
 | 0.6 | Nov 2026 | Colour genetics redone (D-18): two colour genes per mushroom (one may be hidden and resurface in offspring), colour sports to neighbouring shades, and larger heritable colour shifts. Save schema 3. |
 | 0.7 | Nov 2026 | Auto-jobs (D-19): mushrooms take the job that suits them best, overflow to their next best, and are swapped off when a better-suited mushroom arrives; player pins and breaks still work. |
 | 0.8 | Nov 2026 | Breeding Pens are buildings you buy and place (D-20): one incubation per pen, up to 3; tapping a pen opens the breeding menu; Spore/Moonlit Cradle become pen upgrades. A Store screen (D-21) with Workstations, Housing, Breeding, Decor, Paths & Bridges and Ground tabs. Save schema 4 (old Breeding Nook → pen). |
+| 0.9 | Nov 2026 | Mushroom art overhaul (D-22): parts-based generator on a 30×36 frame with per-lobe shading, stems that set the cap's height, a real **second colour** for all patterns, drab stem palette. New growth forms that each lean into one kind of work — Tuftcap, Lumpcap, Tippedcap, Shaggy Inkcap; Lanky, Stubby and Warty stems; Beads, Shaggy scales and Glassy sheen markings; Inky drips. Save schema 5 (mushrooms get a second colour and a stem colour). |
 
 ### 0.2 Conventions
 
@@ -253,7 +254,7 @@ consumed by breeding and never lost through work.
 | Layer | What it is | Affects stats? | Starters? | Limit |
 |---|---|---|---|---|
 | Ordinary attributes | Cap shape, cap colour (+ colour allocation sub-gene), stem, markings, gills/underside, ordinary glow. | Yes — fixed contribution per attribute (Section 7). | Basic tier only | One value per category |
-| Cosmetic genes | Accent colour, stem colour, pattern seed, size variation. | No | Yes | — |
+| Cosmetic genes | Second colour (paints every pattern), stem colour (drab palette), pattern seed. | No | Yes | — |
 | Advanced Traits | Inheritable +4 bonus to one stat (Section 8.1). | Yes | None | 8 (Config) |
 | Perks | Conditional productivity / special behaviour (Section 8.2). | No — productivity modifiers | None | 3 |
 | Mutation | Rare visual effect + substantial bonus (Section 8.3). | Yes | None | 1 |
@@ -475,6 +476,10 @@ include the +2 Rare bonus.
 | Frillcap | Uncommon | 6 | | | | | 4 | | 8 |
 | Lanterncap | Rare | | | | | 11 | 3 | | 6 |
 | Spirecap | Rare | | | | | 9 | | 11 | |
+| Tuftcap | Uncommon | | | 10 | | 8 | | | |
+| Lumpcap | Uncommon | 6 | 12 | | | | | | |
+| Tippedcap | Uncommon | | | | | | 10 | | 8 |
+| Shaggy Inkcap | Rare | | | | | 8 | | 12 | |
 
 **Stem (budget 12; Rare 14)**
 
@@ -487,6 +492,9 @@ include the +2 Rare bonus.
 | Ringed | Uncommon | | | | 2 | | 4 | | 6 |
 | Twisted | Uncommon | | | | | 6 | | 2 | 4 |
 | Crystal-veined | Rare | | | | 6 | 8 | | | |
+| Lanky | Basic | | | 4 | | 2 | | 6 | |
+| Stubby | Basic | 4 | 6 | | 2 | | | | |
+| Warty | Uncommon | | | | | | 7 | | 5 |
 
 **Markings (budget 10; Rare 12)**
 
@@ -499,6 +507,9 @@ include the +2 Rare bonus.
 | Rings | Uncommon | | 3 | | | 5 | | | 2 |
 | Patches | Uncommon | 3 | | | | | 2 | | 5 |
 | Constellation | Rare | | | | | 7 | | 5 | |
+| Beads | Uncommon | 4 | 6 | | | | | | |
+| Shaggy scales | Uncommon | | | | 4 | | | 6 | |
+| Glassy sheen | Uncommon | | | 5 | | 5 | | | |
 
 **Gills / underside (budget 8; Rare 10)**
 
@@ -510,6 +521,7 @@ include the +2 Rare bonus.
 | Ridged | Uncommon | | | | 4 | 2 | | 2 | |
 | Toothed | Uncommon | | | 2 | | | | 4 | 2 |
 | Velvet | Rare | | | | | | 5 | | 5 |
+| Inky drips | Uncommon | | | | | 4 | | 4 | |
 
 **Ordinary glow (budget 6; Rare 8)** — distinct from Mutation glow effects.
 
@@ -521,15 +533,32 @@ include the +2 Rare bonus.
 | Pulse | Uncommon | | | | | 2 | | 4 | |
 | Radiant | Rare | | | | | 8 | | | |
 
-The Basic pool (6 × 4 × 4 × 3 × 2 shapes/stems/markings/gills/glows,
+The Basic pool (6 × 6 × 4 × 3 × 2 shapes/stems/markings/gills/glows,
 times colour) far exceeds the MVP requirement of 12 visual combinations.
+
+**Growth forms (v0.9, D-22).** The newer shapes are deliberately
+focused so that very different-looking mushrooms do very different work.
+Built with matching parts, the four reference looks land in four job
+families (checked by a test):
+
+| Look | Parts | Best job |
+|---|---|---|
+| Glassy tuft | Tuftcap, Slender, Glassy sheen, Soft glow | Dew Collector (Foraging) |
+| Weeping lump | Lumpcap, Stubby, Beads, Toothed | Mycologist (Mycology) |
+| Tipped warty cap | Tippedcap, Warty, Spots, Velvet | Nest Tender (Animal) |
+| Shaggy inkcap | Shaggy Inkcap, Lanky, Shaggy scales, Inky drips, Pulse | Night Watcher (Discovery) |
+
+Wild Visitors bring them in from matching habitats: water (Tuftcap,
+Glassy sheen), damp soil and logs (Lumpcap, Beads), flowers (Tippedcap,
+Warty), deep shade (Shaggy scales, Inky drips). Shaggy Inkcap is a Rare
+variation from Conecap, Spirecap or Bellcap lines.
 
 ### 7.4 Colour-based stat distribution
 
 Colour works differently from other attributes. Every colour contributes
 **exactly 12 points** (Config: `colorBudget`), regardless of brightness.
-Only the **primary cap colour** drives stats; accent and stem colours
-are cosmetic.
+Only the **primary cap colour** drives stats; the second colour and stem
+colour are cosmetic.
 
 #### 7.4.1 Colour groups
 
@@ -1578,6 +1607,23 @@ first insight tool.
 
 - Use the supplied mushroom sprite sheet as a visual reference for colour
   variety, cap silhouettes, markings, stems, shadows, and pixel density.
+- **Generator (v0.9, D-22).** Mushrooms are 30×36 sprites. The stem is
+  drawn first, standing on row 34, and its length decides where the cap
+  sits (Stubby 5 rows … Lanky 15). Caps are made in a reference frame
+  (bottom on row 23) and moved into place; each lobe is shaded on its own
+  with a five-step ramp (highlight, light, base, shade, deep hem) lit
+  from the top left, with hue-shifted shadows. Outlines are dark cap or
+  stem colour depending on the part they wrap. Tuftcap draws two extra
+  bells on their own stalks; Lumpcap sits on the ground and hides its
+  stem, with the face on the cap.
+- **Colours.** Cap colour (stats), a **second colour** that paints
+  spots, stripes, speckles, rings, patches, beads, scales, sheen and stem
+  warts, and a stem colour from a drab palette (cream, bone, biscuit,
+  tan, fawn, ash, dove, lichen, heather, umber, ochre, sage). Second and
+  stem colours are inherited from one parent (or blended when alike) and
+  occasionally jump to another palette shade.
+- Parts can be redrawn in the Sprite Workshop; edited parts are colour-role
+  masks recoloured by each mushroom's genes.
 - Build mushrooms from modular layers: cap base, cap highlight/shade
   ramp, markings, gills/underside, stem, feet/base shadow, ordinary glow,
   and Mutation effect layers.
@@ -2004,6 +2050,7 @@ feel of breeding and visible forest life before adding more content.
 | D-13 | Affinity | Derived from highest final stat, 8 names. Approved. |
 | D-14 | Breeding cost | One free breeding, then Glimmer (soft currency). |
 | D-15 | Development stage order | Strictly linear, in the order listed. |
+| D-22 | Mushroom art | Parts-based 30×36 generator; second colour paints patterns; drab stems; focused growth forms map to distinct job families. |
 | D-21 | Store | A Store screen with tabs for workstations, housing, breeding, decor, paths & bridges and ground. |
 | D-20 | Breeding Pens | Buy-and-place pens; one incubation each (max 3); tap to breed; cradles are pen upgrades. |
 | D-19 | Job assignment | Automatic best-fit placement with swapping; player can pin, unpin or rest a mushroom; toggle in Settings. |

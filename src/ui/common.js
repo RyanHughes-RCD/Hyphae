@@ -2,7 +2,7 @@
 // text nodes (never innerHTML), so imported names cannot inject markup.
 import { STATS, STAT_NAMES, getConfig } from '../config.js';
 import { RESOURCES } from '../content/world.js';
-import { ATTRIBUTE_BY_ID, CATEGORY_NAMES, CATEGORIES, TEMPERAMENT_BY_ID } from '../content/attributes.js';
+import { ATTRIBUTE_BY_ID, CATEGORY_NAMES, CATEGORIES, TEMPERAMENT_BY_ID, SECONDARY_PALETTE, STEM_PALETTE } from '../content/attributes.js';
 import { PERK_BY_ID, MUTATION_BY_ID, TRAIT_NAMES } from '../content/genetics.js';
 import { mushroomCanvas, resourceColor } from '../render/sprites.js';
 import { affinity, rarityTier, colorFamily, colorGroupPoints, colorContribution } from '../core/stats.js';
@@ -139,8 +139,21 @@ export function attributeList(m) {
       ? h('span', { class: 'attr-name' }, h('span', { class: 'swatch', style: { background: hex(m.genes.color) } }), 'shown + ', h('span', { class: 'swatch hidden-swatch', title: 'A hidden colour' }, '?'), 'a hidden colour')
       : h('span', { class: 'attr-name' }, 'No hidden colour'),
     h('span', { class: 'attr-stats small' }, hiddenColor(m.genes) ? 'Its offspring may show the hidden colour instead.' : 'Both of its colour genes look alike.')));
+  rows.push(h('div', { class: 'attr-row' },
+    h('span', { class: 'attr-cat' }, 'Second colour'),
+    h('span', { class: 'attr-name' }, h('span', { class: 'swatch', style: { background: hex(m.genes.accent) } }), nearestName(SECONDARY_PALETTE, m.genes.accent)),
+    h('span', { class: 'attr-stats small' }, 'Paints its spots, stripes, beads, warts and sheen. Looks only.')));
+  rows.push(h('div', { class: 'attr-row' },
+    h('span', { class: 'attr-cat' }, 'Stem colour'),
+    h('span', { class: 'attr-name' }, h('span', { class: 'swatch', style: { background: hex(m.genes.stemColor) } }), nearestName(STEM_PALETTE, m.genes.stemColor)),
+    h('span', { class: 'attr-stats small' }, 'Looks only.')));
   return h('div', { class: 'attr-list' }, rows);
 }
+
+const nearestName = (pal, rgb) => pal.reduce((best, p) => {
+  const d = Math.hypot(p.rgb[0] - rgb[0], p.rgb[1] - rgb[1], p.rgb[2] - rgb[2]);
+  return d < best.d ? { d, name: p.name } : best;
+}, { d: Infinity, name: '' }).name;
 
 export function statText(stats) {
   return STATS.filter((s) => stats[s]).map((s) => `${s} +${stats[s]}`).join(', ') || '—';
