@@ -51,34 +51,34 @@ export const JOB_BY_ID = Object.fromEntries(JOBS.map((j) => [j.id, j]));
 
 // kind: work | special | home | decor
 export const STRUCTURES = {
-  garden_bed: { name: 'Garden Bed', kind: 'work', job: 'gardener', slots: 1, cost: { twigs: 8, leaves: 4 }, buildable: true, sprite: 'bed' },
-  wild_thicket: { name: 'Wild Thicket', kind: 'work', job: 'forager', slots: 3, cost: { seeds: 4, leaves: 6 }, buildable: true, sprite: 'bush' },
-  breeding_nook: { name: 'Breeding Nook', kind: 'special', sprite: 'nook' },
+  garden_bed: { name: 'Garden Bed', kind: 'work', job: 'gardener', slots: 1, cost: { twigs: 8, leaves: 4 }, buildable: true, sprite: 'bed', store: 'workstation', desc: 'Another Gardener place: berries, seeds and flowers.' },
+  wild_thicket: { name: 'Wild Thicket', kind: 'work', job: 'forager', slots: 3, cost: { seeds: 4, leaves: 6 }, buildable: true, sprite: 'bush', store: 'workstation', desc: 'Room for three more Foragers.' },
+  breeding_pen: { name: 'Breeding Pen', kind: 'pen', cost: { twigs: 8, leaves: 6 }, buildable: true, store: 'breeding', sprite: 'pen', desc: 'Pair two mushrooms here to grow a spore cluster. Each pen incubates one at a time (up to 3 pens).' },
   trading_stump: { name: 'Trading Stump', kind: 'special', sprite: 'stump' },
-  spore_bed: { name: 'Spore Bed', kind: 'work', job: 'mycologist', slots: 2, cost: { twigs: 10, leaves: 10 }, buildable: true, buildCost: { compost: 4, twigs: 6 }, sprite: 'sporebed' },
-  workbench: { name: 'Workbench', kind: 'work', job: 'woodworker', slots: 2, cost: { twigs: 15, bark: 6, stones: 8 }, sprite: 'bench' },
-  building_site: { name: 'Building Site', kind: 'work', job: 'builder', slots: 2, cost: { twigs: 10, stones: 6 }, sprite: 'site' },
-  dew_reeds: { name: 'Dew Reeds', kind: 'work', job: 'dew_collector', slots: 2, cost: { planks: 4, twigs: 6 }, sprite: 'reeds' },
-  water_barrel: { name: 'Water Barrel', kind: 'work', job: 'waterer', slots: 1, cost: { planks: 6 }, sprite: 'barrel' },
-  reed_nest: { name: 'Reed Nest', kind: 'work', job: 'nest_tender', slots: 2, cost: { twigs: 8, leaves: 8 }, sprite: 'nest' },
-  dig_site: { name: 'Dig Site', kind: 'work', job: 'excavator', slots: 2, cost: { planks: 6, stones: 10 }, sprite: 'dig' },
-  lookout_stump: { name: 'Lookout Stump', kind: 'work', job: 'night_watcher', slots: 2, cost: { planks: 8, bark: 6 }, sprite: 'lookout' },
-  shrine: { name: 'Shrine', kind: 'work', job: 'enchanter', slots: 2, cost: { stones: 20, moonlight: 6, glowDust: 4 }, sprite: 'shrine' },
-  moonlit_grove: { name: 'Moonlit Grove', kind: 'work', job: 'spirit_keeper', slots: 2, cost: { seeds: 10, dew: 10, moonlight: 4 }, sprite: 'grove' },
-  gathering_circle: { name: 'Gathering Circle', kind: 'work', job: 'festival_helper', slots: 2, cost: { planks: 15, flowers: 10 }, sprite: 'circle' },
-  gift_table: { name: 'Gift Table', kind: 'work', job: 'gift_maker', slots: 2, cost: { planks: 10, spiritDew: 4 }, sprite: 'table' },
-  mushroom_home: { name: 'Mushroom Home', kind: 'home', capacity: 2, cost: { planks: 6, stones: 4 }, buildable: true, requiresStage: 'workshop', sprite: 'home' },
-  cozy_home: { name: 'Cozy Home', kind: 'home', capacity: 4, cost: { planks: 12, decorations: 4, stones: 6 }, buildable: true, requiresStage: 'community', sprite: 'cozyhome' },
+  spore_bed: { name: 'Spore Bed', kind: 'work', job: 'mycologist', slots: 2, cost: { twigs: 10, leaves: 10 }, buildable: true, buildCost: { compost: 4, twigs: 6 }, sprite: 'sporebed', store: 'workstation', desc: 'Two more Mycologist places.' },
+  workbench: { name: 'Workbench', kind: 'work', job: 'woodworker', slots: 2, cost: { twigs: 15, bark: 6, stones: 8 }, sprite: 'bench', buildable: true, store: 'workstation', desc: 'Two more Woodworker places.' },
+  building_site: { name: 'Building Site', kind: 'work', job: 'builder', slots: 2, cost: { twigs: 10, stones: 6 }, sprite: 'site', buildable: true, store: 'workstation', desc: 'Two more Builder places.' },
+  dew_reeds: { name: 'Dew Reeds', kind: 'work', job: 'dew_collector', slots: 2, cost: { planks: 4, twigs: 6 }, sprite: 'reeds', buildable: true, store: 'workstation', desc: 'Two more Dew Collector places.' },
+  water_barrel: { name: 'Water Barrel', kind: 'work', job: 'waterer', slots: 1, cost: { planks: 6 }, sprite: 'barrel', buildable: true, store: 'workstation', desc: 'Another Waterer place.' },
+  reed_nest: { name: 'Reed Nest', kind: 'work', job: 'nest_tender', slots: 2, cost: { twigs: 8, leaves: 8 }, sprite: 'nest', buildable: true, store: 'workstation', desc: 'Two more Nest Tender places.' },
+  dig_site: { name: 'Dig Site', kind: 'work', job: 'excavator', slots: 2, cost: { planks: 6, stones: 10 }, sprite: 'dig', buildable: true, store: 'workstation', desc: 'Two more Excavator places.' },
+  lookout_stump: { name: 'Lookout Stump', kind: 'work', job: 'night_watcher', slots: 2, cost: { planks: 8, bark: 6 }, sprite: 'lookout', buildable: true, store: 'workstation', desc: 'Two more Night Watcher places.' },
+  shrine: { name: 'Shrine', kind: 'work', job: 'enchanter', slots: 2, cost: { stones: 20, moonlight: 6, glowDust: 4 }, sprite: 'shrine', buildable: true, store: 'workstation', desc: 'Two more Enchanter places.' },
+  moonlit_grove: { name: 'Moonlit Grove', kind: 'work', job: 'spirit_keeper', slots: 2, cost: { seeds: 10, dew: 10, moonlight: 4 }, sprite: 'grove', buildable: true, store: 'workstation', desc: 'Two more Spirit Keeper places.' },
+  gathering_circle: { name: 'Gathering Circle', kind: 'work', job: 'festival_helper', slots: 2, cost: { planks: 15, flowers: 10 }, sprite: 'circle', buildable: true, store: 'workstation', desc: 'Two more Festival Helper places.' },
+  gift_table: { name: 'Gift Table', kind: 'work', job: 'gift_maker', slots: 2, cost: { planks: 10, spiritDew: 4 }, sprite: 'table', buildable: true, store: 'workstation', desc: 'Two more Gift Maker places.' },
+  mushroom_home: { name: 'Mushroom Home', kind: 'home', capacity: 2, cost: { planks: 6, stones: 4 }, buildable: true, requiresStage: 'workshop', sprite: 'home', store: 'housing', desc: 'Room for 2 more resident mushrooms.' },
+  cozy_home: { name: 'Cozy Home', kind: 'home', capacity: 4, cost: { planks: 12, decorations: 4, stones: 6 }, buildable: true, requiresStage: 'community', sprite: 'cozyhome', store: 'housing', desc: 'Room for 4 more resident mushrooms.' },
   // decorations — habitat influence for Wild Visitors (GDD 5.3)
-  flower_patch: { name: 'Flower Patch', kind: 'decor', cost: { seeds: 2 }, buildable: true, habitat: 'flowers', sprite: 'flowers' },
-  fern_clump: { name: 'Fern Clump', kind: 'decor', cost: { leaves: 4 }, buildable: true, habitat: 'shade', sprite: 'fern' },
-  stone_ring: { name: 'Stone Ring', kind: 'decor', cost: { stones: 5 }, buildable: true, habitat: 'stone', sprite: 'stones' },
-  fallen_log: { name: 'Fallen Log', kind: 'decor', cost: { bark: 4, twigs: 4 }, buildable: true, habitat: 'log', sprite: 'log' },
-  little_pond: { name: 'Little Pond', kind: 'decor', cost: { stones: 4, dew: 4 }, buildable: true, requiresStage: 'pond', habitat: 'water', sprite: 'pond' },
-  lantern: { name: 'Glow Lantern', kind: 'decor', cost: { planks: 2, glowDust: 1 }, buildable: true, requiresStage: 'roothollow', habitat: 'glow', sprite: 'lantern' },
+  flower_patch: { name: 'Flower Patch', kind: 'decor', cost: { seeds: 2 }, buildable: true, habitat: 'flowers', sprite: 'flowers', store: 'decor', desc: 'Pretty, and attracts flower-loving Wild Visitors.' },
+  fern_clump: { name: 'Fern Clump', kind: 'decor', cost: { leaves: 4 }, buildable: true, habitat: 'shade', sprite: 'fern', store: 'decor', desc: 'Adds shade; attracts shade-loving Wild Visitors.' },
+  stone_ring: { name: 'Stone Ring', kind: 'decor', cost: { stones: 5 }, buildable: true, habitat: 'stone', sprite: 'stones', store: 'decor', desc: 'Stony habitat for Wild Visitors.' },
+  fallen_log: { name: 'Fallen Log', kind: 'decor', cost: { bark: 4, twigs: 4 }, buildable: true, habitat: 'log', sprite: 'log', store: 'decor', desc: 'A mossy log; Wild Visitors from the woods like it.' },
+  little_pond: { name: 'Little Pond', kind: 'decor', cost: { stones: 4, dew: 4 }, buildable: true, requiresStage: 'pond', habitat: 'water', sprite: 'pond', store: 'decor', desc: 'A tiny pond for water-loving Wild Visitors.' },
+  lantern: { name: 'Glow Lantern', kind: 'decor', cost: { planks: 2, glowDust: 1 }, buildable: true, requiresStage: 'roothollow', habitat: 'glow', sprite: 'lantern', store: 'decor', desc: 'A soft glow; attracts glowing Wild Visitors.' },
   moonstone_ring: { name: 'Moonstone Ring', kind: 'special', sprite: 'moonstone' },
   // crossing water: makes a river or lake tile walkable
-  bridge: { name: 'Bridge', kind: 'bridge', cost: { twigs: 6, bark: 2 }, buildable: true, onWater: true, sprite: 'bridge' },
+  bridge: { name: 'Bridge', kind: 'bridge', cost: { twigs: 6, bark: 2 }, buildable: true, onWater: true, sprite: 'bridge', store: 'paths', desc: 'Crosses the river or a lake so mushrooms can reach the other side.' },
   // clutter strewn across new expansions — clear it to make room (yields a few resources)
   weeds: { name: 'Weeds', kind: 'clutter', clear: { leaves: 1 }, weight: 6, sprite: 'weeds' },
   brambles: { name: 'Brambles', kind: 'clutter', clear: { twigs: 2, berries: 1 }, weight: 4, sprite: 'brambles' },
@@ -89,7 +89,7 @@ export const STRUCTURES = {
 };
 
 export const BREEDING_STATIONS = {
-  breeding_nook: { name: 'Breeding Nook' },
+  breeding_nook: { name: 'Simple Pens' }, // the starting tier of every pen
   spore_cradle: { name: 'Spore Cradle', cost: { planks: 12, spores: 10 }, requiresStage: 'workshop' },
   moonlit_cradle: { name: 'Moonlit Cradle', cost: { planks: 20, moonlight: 8, glowDust: 6 }, requiresStage: 'landmark' },
 };
@@ -113,6 +113,11 @@ export const TERRAIN = {
   r: { name: 'River', color: '#3a78b0', dark: '#2f6a9e', water: true, blocks: true },
 };
 export const PAINTABLE_TERRAIN = ['g', 'm', 'd', 'l', 's', 'h'];
+
+// Store tabs, in order
+export const STORE_TABS = [
+  ['workstation', 'Workstations'], ['housing', 'Housing'], ['breeding', 'Breeding'], ['decor', 'Decor'], ['paths', 'Paths & Bridges'], ['ground', 'Ground'],
+];
 // plain glades (extra space) use this theme
 export const GLADE_THEME = { ground: { g: 68, m: 22, l: 10 }, thicket: 0.45 };
 export const TERRAIN_PAINT_COST = { leaves: 1 };
@@ -144,7 +149,6 @@ export const STAGES = [
       { def: 'garden_bed', x: 1, y: 3, state: 'built' },
       { def: 'garden_bed', x: 2, y: 5, state: 'built' },
       { def: 'wild_thicket', x: 8, y: 2, state: 'built' },
-      { def: 'breeding_nook', x: 5, y: 1, state: 'built' },
       { def: 'trading_stump', x: 7, y: 6, state: 'built' },
     ],
   },
@@ -220,7 +224,7 @@ export function registerCustomDecorations(sprites = {}) {
     const id = 'custom_' + key.slice(7).replace(/[^a-z0-9_]/gi, '_');
     STRUCTURES[id] = {
       name: sp.name || 'Decoration', kind: 'decor', cost: sp.cost || { twigs: 3, leaves: 2 }, buildable: true,
-      habitat: sp.habitat || null, sprite: 'flowers', custom: true, overrideKey: key, // drawn from its own sprite
+      habitat: sp.habitat || null, sprite: 'flowers', custom: true, overrideKey: key, store: 'decor', desc: 'Your own decoration from the Sprite Workshop.', // drawn from its own sprite
     };
   }
 }

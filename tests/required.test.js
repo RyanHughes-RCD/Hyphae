@@ -214,6 +214,7 @@ test('13. spontaneous Mutation rolls only happen when no parental Mutation was i
 
 test('14. refreshing during incubation cannot change the offspring', () => {
   const s = G.newGame({ now: NOW, seed: 'refresh', tzOffset: 0 });
+  G.devGivePen(s);
   const [a, b] = s.mushrooms;
   const r = G.startBreeding(s, a.uid, b.uid, NOW);
   assert.ok(r.ok);
@@ -230,7 +231,9 @@ test('14. refreshing during incubation cannot change the offspring', () => {
   assert.equal(G.claimBreeding(reloaded, r.record.id, NOW + 7200e3).ok, false);
   // restoring an older save and breeding the same pair yields the same offspring
   resetConfig();
-  const again = parseSave(serialize(G.newGame({ now: NOW, seed: 'refresh', tzOffset: 0 })));
+  const fresh = G.newGame({ now: NOW, seed: 'refresh', tzOffset: 0 });
+  G.devGivePen(fresh);
+  const again = parseSave(serialize(fresh));
   const r2 = G.startBreeding(again, a.uid, b.uid, NOW + 5);
   assert.deepEqual(r2.record.offspring.genes, r.record.offspring.genes);
 });

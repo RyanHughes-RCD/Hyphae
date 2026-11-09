@@ -173,31 +173,32 @@ function projectCard(app) {
 function buildBar(app) {
   const s = app.state;
   const tool = app.buildTool;
-  const defs = Object.entries(STRUCTURES).filter(([id, d]) => d.buildable);
   const setTool = (t) => { app.buildTool = t; app.render(); };
-  const kinds = [['clear', 'Clear'], ['place', 'Place'], ['paint', 'Paint'], ['move', 'Move'], ['remove', 'Remove']];
+  if (tool.kind === 'place' && tool.def) {
+    const d = STRUCTURES[tool.def];
+    const cost = d.buildCost || d.cost;
+    return h('div', { class: 'card build-bar' },
+      h('p', { class: 'small hint' }, `Tap a free spot to put down the ${d.name}. Tap more spots to place another.`),
+      h('div', { class: 'row gap wrap' }, h('b', {}, d.name), costView(s, cost)),
+      h('div', { class: 'row gap wrap' },
+        h('button', { type: 'button', class: 'btn small', onclick: () => { app.buildTool = null; app.go('store'); } }, '🛒 Back to the Store'),
+        h('button', { type: 'button', class: 'btn small primary', onclick: () => setTool(null) }, 'Done')));
+  }
+  const kinds = [['clear', 'Clear'], ['move', 'Move'], ['remove', 'Remove'], ['paint', 'Paint']];
   return h('div', { class: 'card build-bar' },
-    h('div', { class: 'row gap wrap' },
-      kinds.map(([k, label]) => h('button', { type: 'button', class: 'btn small' + (tool.kind === k ? ' primary' : ''), onclick: () => setTool(k === 'clear' ? { kind: 'clear' } : k === 'place' ? { kind: 'place', def: null } : k === 'paint' ? { kind: 'paint', code: 'm' } : k === 'move' ? { kind: 'move', objectId: null } : { kind: 'remove' }) }, label)),
-      h('button', { type: 'button', class: 'btn small', onclick: () => setTool(null) }, 'Done')),
-    tool.kind === 'place' ? h('div', { class: 'build-list' }, defs.map(([id, d]) => {
-      const avail = G.buildable(s, id);
-      const cost = d.buildCost || d.cost;
-      return h('button', {
-        type: 'button', class: 'build-item' + (tool.def === id ? ' selected' : '') + (avail ? '' : ' locked'),
-        disabled: !avail, onclick: () => setTool({ kind: 'place', def: id }),
-      }, h('b', {}, d.name), h('span', { class: 'small' }, avail ? (d.kind === 'decor' ? 'Decoration — attracts Wild Visitors' : d.kind === 'home' ? `+${d.capacity} residents` : d.kind === 'bridge' ? 'Crosses the river or a lake' : `+${d.slots} ${JOB_BY_ID[d.job].name} slot(s)`) : lockText(d)), costView(s, cost));
-    })) : null,
-    tool.kind === 'paint' ? h('div', {}, h('div', { class: 'row gap wrap' }, PAINTABLE_TERRAIN.map((c) => h('button', {
-      type: 'button', class: 'btn small terrain-btn' + (tool.code === c ? ' primary' : ''), onclick: () => setTool({ kind: 'paint', code: c }),
-    }, h('span', { class: 'swatch', style: { background: TERRAIN[c].color } }), TERRAIN[c].name))), h('div', { class: 'small' }, 'Tap tiles to paint. Each tile costs ', costView(s, TERRAIN_PAINT_COST), '. Moss, damp soil and shade attract different Wild Visitors.')) : null,
     h('p', { class: 'small hint' }, {
       clear: 'Tap weeds, rocks, brambles, branches or thicket to clear them. You keep what you clear.',
-      place: tool.def ? `Tap an empty tile to place a ${STRUCTURES[tool.def].name}.` : 'Choose something to build, then tap a tile.',
       paint: 'Tap tiles to change the ground.',
       move: tool.objectId ? 'Tap an empty tile to move it there.' : 'Tap any structure to pick it up, then tap where it should go.',
-      remove: 'Tap a decoration, bridge or extra structure to remove it.',
-    }[tool.kind]));
+      remove: 'Tap a decoration, bridge, pen or extra structure to remove it.',
+    }[tool.kind] || ''),
+    h('div', { class: 'row gap wrap' },
+      kinds.map(([k, label]) => h('button', { type: 'button', class: 'btn small' + (tool.kind === k ? ' primary' : ''), onclick: () => setTool(k === 'paint' ? { kind: 'paint', code: tool.code || 'm' } : k === 'move' ? { kind: 'move', objectId: null } : { kind: k }) }, label)),
+      h('button', { type: 'button', class: 'btn small', onclick: () => { app.buildTool = null; app.go('store'); } }, '🛒 Store'),
+      h('button', { type: 'button', class: 'btn small', onclick: () => setTool(null) }, 'Done')),
+    tool.kind === 'paint' ? h('div', {}, h('div', { class: 'row gap wrap' }, PAINTABLE_TERRAIN.map((c) => h('button', {
+      type: 'button', class: 'btn small terrain-btn' + (tool.code === c ? ' primary' : ''), onclick: () => setTool({ kind: 'paint', code: c }),
+    }, h('span', { class: 'swatch', style: { background: TERRAIN[c].color } }), TERRAIN[c].name))), h('div', { class: 'small' }, 'Each tile costs ', costView(s, TERRAIN_PAINT_COST), '.')) : null);
 }
 
 function lockText(d) {
@@ -244,11 +245,9 @@ export function objectPanel(app, id) {
     app.modal(h('p', {}, 'A little bridge over the water. Mushrooms can cross here.'), { title: 'Bridge' });
     return;
   }
-  if (o.def === 'breeding_nook') {
-    const st = BREEDING_STATIONS[s.station];
-    const m = app.modal([h('p', {}, `Your breeding station: ${st.name}.`), h('p', {}, 'Pair two mushrooms here to grow a spore cluster that hatches into a new mushroom.')], {
-      title: st.name, footer: [h('button', { type: 'button', class: 'btn primary', onclick: () => { m.close(); app.go('breed'); } }, 'Go to Breeding')],
-    });
+  if (o.def === 'breeding_pen') {
+    if (!G.objectReachable(s, o.id)) { app.toast('Your mushrooms cannot reach this pen — bridge the water or clear the thicket.', 'error'); return; }
+    app.go('breed');
     return;
   }
   if (o.def === 'trading_stump') {

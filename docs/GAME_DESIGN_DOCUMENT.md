@@ -2,7 +2,7 @@
 
 ## A cozy breeding, collecting, and forest-life game
 
-**Game Design Document | Version 0.7 | November 2026**
+**Game Design Document | Version 0.8 | November 2026**
 
 > **Design direction:** Begin with three ordinary mushrooms. Breed them,
 > generation by generation, into prized specialists. Give them meaningful
@@ -24,6 +24,7 @@
 | 0.5 | Nov 2026 | Wild, randomly generated expansions that must be cleaned up (clutter and thicket) and organised (every structure can be moved); a river that grows with each expansion and must be bridged; drag-and-drop breeding pen; signposts removed; mushrooms shown at 65% size. |
 | 0.6 | Nov 2026 | Colour genetics redone (D-18): two colour genes per mushroom (one may be hidden and resurface in offspring), colour sports to neighbouring shades, and larger heritable colour shifts. Save schema 3. |
 | 0.7 | Nov 2026 | Auto-jobs (D-19): mushrooms take the job that suits them best, overflow to their next best, and are swapped off when a better-suited mushroom arrives; player pins and breaks still work. |
+| 0.8 | Nov 2026 | Breeding Pens are buildings you buy and place (D-20): one incubation per pen, up to 3; tapping a pen opens the breeding menu; Spore/Moonlit Cradle become pen upgrades. A Store screen (D-21) with Workstations, Housing, Breeding, Decor, Paths & Bridges and Ground tabs. Save schema 4 (old Breeding Nook → pen). |
 
 ### 0.2 Conventions
 
@@ -1071,7 +1072,17 @@ Guide entry and a brief tutorial (Section 16).
 | Rare Habitat or Special Milestone | Discover the **Moonstone Ring** rare habitat (found by Excavator or Night Watcher in the Root Hollow) **or** own a Generation 5 mushroom, whichever comes first (approved, decision D-5). | Mutations: rare visual and gameplay transformations. Also enables Rare-tier attribute variation. |
 | Later Generations | Own a Generation 6 mushroom and craft the **Spore Lens**. | Breeding insight tools (10.4). |
 
-### 10.2 Breeding Station upgrades
+### 10.2 Breeding Pens and upgrades (v0.8, decision D-20)
+
+Breeding happens in **Breeding Pens**: buildings the player buys in the
+Store (8 twigs, 6 leaves) and puts down anywhere their mushrooms can reach.
+New games start without one. Each pen grows one spore cluster at a time,
+up to Config: `maxPens` (3) pens; a pen with a cluster growing shows it
+(glowing when ready to hatch) and cannot be removed. Tapping a pen opens
+the breeding menu. The tiers below are now upgrades that apply to every
+pen (they no longer add slots).
+
+### 10.2a Former station tiers
 
 | Station | Slots | Incubation time | Unlocks |
 |---|---|---|---|
@@ -1482,6 +1493,16 @@ breeding system.
 | Build / Decorate | Place, move, rotate (if supported), remove; costs, habitat influence, restoration projects. |
 | Sharing | Export mushroom (code + file), import (paste or file), validation results, Guest preview, Guest Grove list. |
 | Settings | Sound, animation, accessibility, save export/import, reset with confirmation, version information. |
+
+### 15.1a The Store (v0.8, decision D-21)
+
+Everything that can be put down is bought in the **Store** (a bottom-menu
+tab), organised in tabs: Workstations (extra copies of any unlocked job's
+station), Housing, Breeding (pens and pen upgrades), Decor (including
+Sprite Workshop decorations), Paths & Bridges, and Ground (terrain paint).
+Each item shows its art, what it does, its cost, how many you own, and why
+it is locked. Buying enters placement: tap free spots to put down one or
+more, then Done. Build mode keeps Clear, Move, Remove and Paint.
 
 ### 15.2 Mushroom Detail screen
 
@@ -1983,6 +2004,8 @@ feel of breeding and visible forest life before adding more content.
 | D-13 | Affinity | Derived from highest final stat, 8 names. Approved. |
 | D-14 | Breeding cost | One free breeding, then Glimmer (soft currency). |
 | D-15 | Development stage order | Strictly linear, in the order listed. |
+| D-21 | Store | A Store screen with tabs for workstations, housing, breeding, decor, paths & bridges and ground. |
+| D-20 | Breeding Pens | Buy-and-place pens; one incubation each (max 3); tap to breed; cradles are pen upgrades. |
 | D-19 | Job assignment | Automatic best-fit placement with swapping; player can pin, unpin or rest a mushroom; toggle in Settings. |
 | D-18 | Colour genetics | Two colour genes (shown + hidden), sports, and larger heritable shifts. |
 | D-17 | Breeding parent selection | Drag and drop (or tap) mushrooms into a breeding pen. |

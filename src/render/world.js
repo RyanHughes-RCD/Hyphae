@@ -116,6 +116,13 @@ const ART = {
     r(ctx, '#e8d8f0', x + 5, y + 3 - p, 6, 5); r(ctx, '#c8a8e0', x + 6, y + 2 - p, 4, 1); r(ctx, '#ffffff', x + 6, y + 4 - p, 1, 1);
     r(ctx, '#b88ad8', x + 3, y + 6, 2, 2); r(ctx, '#b88ad8', x + 11, y + 5, 2, 2);
   },
+  pen(ctx, x, y) {
+    // a little fenced breeding pen on soft grass
+    r(ctx, '#6aa640', x + 1, y + 5, 14, 10); r(ctx, '#86c25a', x + 2, y + 6, 12, 2);
+    r(ctx, C.woodL, x, y + 5, 16, 1); r(ctx, C.woodL, x, y + 10, 16, 1); r(ctx, C.woodD, x, y + 15, 16, 1);
+    for (const px of [0, 5, 10, 15]) { r(ctx, C.woodD, x + px, y + 3, 1, 13); r(ctx, C.woodL, x + px, y + 3, 1, 1); }
+    r(ctx, '#f08cb0', x + 7, y + 7, 1, 1); r(ctx, '#f08cb0', x + 9, y + 7, 1, 1); r(ctx, '#f08cb0', x + 7, y + 8, 3, 1); r(ctx, '#f08cb0', x + 8, y + 9, 1, 1);
+  },
   stump(ctx, x, y) {
     r(ctx, C.woodD, x + 3, y + 6, 10, 9); r(ctx, C.woodL, x + 3, y + 5, 10, 3); r(ctx, '#d9b07a', x + 5, y + 6, 6, 1);
     r(ctx, '#ffd75e', x + 6, y + 3, 2, 2); r(ctx, '#ffd75e', x + 9, y + 4, 2, 2); r(ctx, '#fff4b0', x + 6, y + 3, 1, 1);

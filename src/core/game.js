@@ -12,7 +12,7 @@ import { computeStats, colorFamily } from './stats.js';
 import { generateStarters, generateWildVisitor, resolveBreeding } from './genetics.js';
 import { conditionsAt, localParts, currentTzOffset } from './time.js';
 
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 const HOUR = 3600000;
 const MIN = 60000;
 
@@ -60,7 +60,7 @@ export function newGame({ now = Date.now(), seed = freshSeed(), forestName = 'My
   createStartClearing(state, now);
   for (const m of state.mushrooms) recordDiscovery(state, m);
   autoAssign(state, now);
-  event(state, 'welcome', 'Welcome to your forest', 'Three little mushrooms have made the clearing their home and have already found the jobs that suit them best. Try breeding two of them at the Breeding Nook.');
+  event(state, 'welcome', 'Welcome to your forest', 'Three little mushrooms have made the clearing their home and have already found the jobs that suit them best. When you have a few twigs and leaves, buy a Breeding Pen from the Store and put it down to start breeding.');
   return state;
 }
 
@@ -606,6 +606,7 @@ export function buildable(state, defId) {
   const def = STRUCTURES[defId];
   if (!def?.buildable) return false;
   if (def.requiresStage && !stageComplete(state, def.requiresStage)) return false;
+  if (def.kind === 'pen' && penCount(state, false) >= getConfig().breeding.maxPens) return false;
   if (def.job) {
     // extra work structures only once the job is unlocked
     if (!jobUnlocked(state, def.job)) return false;
@@ -670,6 +671,7 @@ export function removeObject(state, objectId) {
   if (state.mushrooms.some((m) => m.work?.structureId === objectId)) return fail('Mushrooms are working here.');
   const def = STRUCTURES[found.obj.def];
   if (def.kind === 'home' && residents(state).length > residentCap(state) - def.capacity) return fail('Residents live here — archive someone first.');
+  if (def.kind === 'pen' && activeBreedings(state).length > penCount(state) - 1) return fail('A spore cluster is growing here — hatch it first.');
   const area = state.world.areas[found.areaId];
   area.objects = area.objects.filter((o) => o.id !== objectId);
   bumpWorld(state);
@@ -1167,6 +1169,33 @@ export function stationConfig(state) {
   return getConfig().breeding.stations[state.station];
 }
 
+/** Breeding Pens in the forest (that mushrooms can reach, unless `reachableOnly` is false). */
+export function pens(state, reachableOnly = true) {
+  return allObjects(state).filter((o) => o.def === 'breeding_pen' && o.state === 'built' && (!reachableOnly || objectReachable(state, o.id)));
+}
+
+export function penCount(state, reachableOnly = true) {
+  return pens(state, reachableOnly).length;
+}
+
+/** How many spore clusters can grow at once: one per pen. */
+export function incubationSlots(state) {
+  return Math.min(getConfig().breeding.maxPens, penCount(state));
+}
+
+/** Dev / tests: put a Breeding Pen down for free in the starting clearing. */
+export function devGivePen(state) {
+  const area = state.world.areas.clearing;
+  for (let y = 1; y < AREA_H - 1; y++) for (let x = 1; x < AREA_W - 1; x++) {
+    if (tileFree(state, 'clearing', x, y) && !TERRAIN[area.tiles[y][x]]?.blocks && isReachable(state, 'clearing', x, y)) {
+      area.objects.push({ id: 'o' + state.nextObjectId++, def: 'breeding_pen', x, y, state: 'built', prefab: false });
+      bumpWorld(state);
+      return true;
+    }
+  }
+  return false;
+}
+
 export function breedingCost(state) {
   const cfg = getConfig();
   if (state.breedingsStarted < cfg.breeding.freeBreedingCount) return 0;
@@ -1216,7 +1245,8 @@ export function startBreeding(state, uidA, uidB, now) {
   if (ia) return fail(`${a.name}: ${ia}`);
   if (ib) return fail(`${b.name}: ${ib}`);
   const station = stationConfig(state);
-  if (activeBreedings(state).length >= station.slots) return fail('All incubation slots are busy.');
+  if (!penCount(state)) return fail('Build a Breeding Pen first (Store → Breeding).');
+  if (activeBreedings(state).length >= incubationSlots(state)) return fail('Every pen already has a spore cluster growing. Hatch one or build another pen.');
   const cost = breedingCost(state);
   if (state.glimmer < cost) return fail(`Breeding costs ${cost} Glimmer — you have ${state.glimmer}.`);
 
@@ -1359,6 +1389,7 @@ export function devUnlockAll(state, now) {
       if (def.job) state.discoveries.jobs[def.job] = true;
     }
   }
+  if (!penCount(state, false)) devGivePen(state);
   state.station = 'moonlit_cradle';
   state.breedingsCompleted = Math.max(state.breedingsCompleted, 2);
   discoverMoonstone(state, now);

@@ -52,6 +52,15 @@ const MIGRATIONS = [
     obj.schemaVersion = 3;
     return obj;
   },
+  // v3 -> v4: the free Breeding Nook became a Breeding Pen you buy and place;
+  // existing nooks turn into pens (now movable).
+  (obj) => {
+    for (const area of Object.values(obj.world?.areas || {})) {
+      for (const o of area.objects || []) if (o.def === 'breeding_nook') { o.def = 'breeding_pen'; o.prefab = false; }
+    }
+    obj.schemaVersion = 4;
+    return obj;
+  },
 ];
 
 export function migrate(obj) {

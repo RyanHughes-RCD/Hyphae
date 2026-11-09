@@ -8,6 +8,7 @@ import { ForestView } from '../render/forest.js';
 import { renderForest, objectPanel, thicketPanel } from './screens/forest.js';
 import { renderMushrooms, mushroomDetail } from './screens/mushrooms.js';
 import { renderBreed } from './screens/breed.js';
+import { renderStore } from './screens/store.js';
 import { renderJobs } from './screens/jobs.js';
 import { renderGuide } from './screens/guide.js';
 import { renderMore } from './screens/more.js';
@@ -15,7 +16,7 @@ import { renderMore } from './screens/more.js';
 const NAV = [
   { id: 'forest', label: 'Forest', icon: '🌳' },
   { id: 'mushrooms', label: 'Mushrooms', icon: '🍄' },
-  { id: 'breed', label: 'Breed', icon: '✨' },
+  { id: 'store', label: 'Store', icon: '🛒' },
   { id: 'jobs', label: 'Jobs', icon: '🧺' },
   { id: 'guide', label: 'Guide', icon: '📖' },
   { id: 'more', label: 'More', icon: '☰' },
@@ -84,7 +85,7 @@ export class App {
     this.updateConditions();
     if (report.elapsed > 5 * 60000) this.showReturnSummary(report);
     const ready = this.state.breedings.filter((b) => b.state === 'incubating' && b.completesAt <= this.now()).length;
-    if (ready > before) this.toast('A spore cluster is ready to hatch! Visit Breed.');
+    if (ready > before) this.toast('A spore cluster is ready to hatch! Tap your Breeding Pen.');
     this.flushEvents();
     this.updateLive(report, ready !== before);
     if (Date.now() - this.lastSave > 10000) this.save();
@@ -168,8 +169,8 @@ export class App {
     if (!this.state) return;
     this.renderHeader();
     for (const b of this.nav.querySelectorAll('.nav-btn')) {
-      b.classList.toggle('active', b.dataset.id === this.screen);
-      const ready = b.dataset.id === 'breed' && this.state.breedings.some((x) => x.state === 'incubating' && x.completesAt <= this.now());
+      b.classList.toggle('active', b.dataset.id === (this.screen === 'breed' ? 'forest' : this.screen));
+      const ready = b.dataset.id === 'forest' && this.state.breedings.some((x) => x.state === 'incubating' && x.completesAt <= this.now());
       b.classList.toggle('alert', ready);
     }
     const scroll = this.main.scrollTop;
@@ -177,6 +178,7 @@ export class App {
     switch (this.screen) {
       case 'mushrooms': node = renderMushrooms(this); break;
       case 'breed': node = renderBreed(this); break;
+      case 'store': node = renderStore(this); break;
       case 'jobs': node = renderJobs(this); break;
       case 'guide': node = renderGuide(this); break;
       case 'more': node = renderMore(this); break;
@@ -199,7 +201,7 @@ export class App {
     }
     const busy = this.modalStack.length || document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA' || document.activeElement?.tagName === 'SELECT';
     const periodic = Math.floor(Date.now() / 1000) % 5 === 0;
-    if (!busy && (breedingChanged || (periodic && ['jobs', 'more', 'breed'].includes(this.screen)) || (report.cycles && this.screen === 'forest' && periodic))) this.render();
+    if (!busy && (breedingChanged || (periodic && ['jobs', 'more', 'breed', 'store'].includes(this.screen)) || (report.cycles && this.screen === 'forest' && periodic))) this.render();
     else if (periodic) this.renderHeader();
   }
 

@@ -84,10 +84,12 @@ const DEFAULT_CONFIG = {
     offspringMaturationMinutes: 0,
     freeBreedingCount: 1,
     breedingCostGlimmer: 15,
+    maxPens: 3, // each Breeding Pen incubates one spore cluster at a time
+    // pen upgrades (apply to every pen)
     stations: {
-      breeding_nook: { slots: 1, speed: 1.0, discount: 0 },
-      spore_cradle: { slots: 2, speed: 0.9, discount: 0 },
-      moonlit_cradle: { slots: 3, speed: 0.75, discount: 2 },
+      breeding_nook: { speed: 1.0, discount: 0 },
+      spore_cradle: { speed: 0.9, discount: 0 },
+      moonlit_cradle: { speed: 0.75, discount: 2 },
     },
   },
 

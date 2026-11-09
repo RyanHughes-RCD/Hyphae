@@ -35,8 +35,18 @@ export function renderBreed(app) {
       h('button', { type: 'button', class: 'btn primary', disabled: !ready, onclick: () => claim(app, r.id) }, 'Hatch'));
   });
 
-  const canBreed = a && b && active.length < station.slots;
+  const slots = G.incubationSlots(s);
+  const canBreed = a && b && active.length < slots;
+  const back = h('button', { type: 'button', class: 'btn small', onclick: () => app.go('forest') }, '← Forest');
+  if (!G.penCount(s, false)) {
+    return h('div', {},
+      h('div', { class: 'row gap' }, back),
+      h('h2', { class: 'screen-title' }, 'Breeding'),
+      section('You need a Breeding Pen', h('p', {}, 'Pens are where two mushrooms grow a spore cluster that hatches into a new mushroom. Buy one in the Store and put it down in your forest, then tap it to come back here.'),
+        h('button', { type: 'button', class: 'btn primary', onclick: () => { app.ui.storeTab = 'breeding'; app.go('store'); } }, '🛒 Buy a Breeding Pen')));
+  }
   return h('div', {},
+    h('div', { class: 'row gap' }, back),
     h('h2', { class: 'screen-title' }, 'Breeding'),
     section('Breeding pen',
       pen(app, a, b),
@@ -49,14 +59,15 @@ export function renderBreed(app) {
             const r = app.act(() => G.startBreeding(s, a.uid, b.uid, app.now()), 'A spore cluster begins to grow…');
             if (r.ok) { app.ui.breed = { a: null, b: null }; app.render(); }
           },
-        }, active.length >= station.slots ? 'Incubator full' : cost ? `Begin breeding (${cost} Glimmer)` : 'Begin breeding (free)'),
+        }, !slots ? 'Your pens are out of reach' : active.length >= slots ? 'Every pen is busy' : cost ? `Begin breeding (${cost} Glimmer)` : 'Begin breeding (free)'),
         a || b ? h('button', { type: 'button', class: 'btn', onclick: () => { app.ui.breed = { a: null, b: null }; app.render(); } }, 'Empty pen') : null)),
     incub.length ? section('Incubating', incub) : null,
-    section(stationDef.name,
-      h('p', { class: 'small' }, `${active.length}/${station.slots} incubation slot(s) · incubation ${fmtDuration(getConfig().breeding.incubationMinutes * 60000 * station.speed)} · cost: `, cost ? costView(s, { glimmer: cost }) : h('b', {}, 'Free (first breeding)')),
-      next ? h('div', { class: 'list-row' }, h('div', {}, h('b', {}, `Upgrade to ${BREEDING_STATIONS[next].name}`), h('div', { class: 'small' }, next === 'spore_cradle' ? 'Unlocks Perks, +1 slot, 10% faster.' : '+1 slot, 25% faster, small discount.'), costView(s, BREEDING_STATIONS[next].cost),
-        BREEDING_STATIONS[next].requiresStage && !G.stageComplete(s, BREEDING_STATIONS[next].requiresStage) ? h('div', { class: 'small warn' }, 'Requires a later area of the forest.') : null),
-      h('button', { type: 'button', class: 'btn', onclick: () => app.act(() => G.upgradeStation(s, app.now())) }, 'Upgrade')) : null),
+    section(`Your pens (${G.penCount(s, false)})`,
+      h('p', { class: 'small' }, `${active.length}/${slots} in use · ${stationDef.name} · incubation ${fmtDuration(getConfig().breeding.incubationMinutes * 60000 * station.speed)} · cost: `, cost ? costView(s, { glimmer: cost }) : h('b', {}, 'Free (first breeding)')),
+      G.penCount(s) < G.penCount(s, false) ? h('p', { class: 'small warn' }, 'Some pens are out of reach — bridge the water or clear the thicket.') : null,
+      h('p', { class: 'small muted' }, `Each pen grows one spore cluster at a time (up to ${getConfig().breeding.maxPens} pens). `,
+        next ? `Upgrade every pen to the ${BREEDING_STATIONS[next].name} in the Store.` : 'Your pens are fully upgraded.'),
+      h('button', { type: 'button', class: 'btn small', onclick: () => { app.ui.storeTab = 'breeding'; app.go('store'); } }, '🛒 Pens & upgrades')),
     recent(app),
   );
 }

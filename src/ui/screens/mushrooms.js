@@ -111,7 +111,11 @@ export function mushroomDetail(app, m) {
     if (m.jobPin) actions.push(h('button', { type: 'button', class: 'btn', onclick: () => { app.act(() => G.unpinJob(s, m.uid, app.now()), m.jobPin === 'rest' ? `${m.name} is back to work.` : `${m.name} will choose its own job.`); app.closeModal(); app.openMushroom(m.uid); } }, m.jobPin === 'rest' ? 'Back to work' : 'Let it choose'));
     if (m.jobPin !== 'rest') actions.push(h('button', { type: 'button', class: 'btn', onclick: () => { app.act(() => G.unassign(s, m.uid, app.now()), `${m.name} is taking a break.`); app.closeModal(); app.openMushroom(m.uid); } }, 'Give a break'));
   }
-  actions.push(h('button', { type: 'button', class: 'btn', onclick: () => { app.ui.breed = { a: m.uid, b: app.ui.breed.b === m.uid ? null : app.ui.breed.b, picking: null }; app.closeAllModals(); app.go('breed'); } }, 'Breed'));
+  actions.push(h('button', { type: 'button', class: 'btn', onclick: () => {
+    app.closeAllModals();
+    if (!G.penCount(s)) { app.ui.storeTab = 'breeding'; app.go('store'); app.toast('Build a Breeding Pen first.'); return; }
+    app.ui.breed = { a: m.uid, b: app.ui.breed.b === m.uid ? null : app.ui.breed.b, picking: null }; app.go('breed');
+  } }, 'Breed'));
   if (owned) actions.push(h('button', { type: 'button', class: 'btn', onclick: () => { const r = exportMushroom(s, m.uid, Date.now()); if (r.ok) shareModal(app, m, r.code); else app.toast(r.reason, 'error'); } }, 'Share'));
   if (owned && m.status === 'resident') actions.push(h('button', { type: 'button', class: 'btn', onclick: () => { app.act(() => G.setArchived(s, m.uid, true), `${m.name} moved to the Spore Archive.`); app.closeModal(); } }, 'Archive'));
   if (owned && m.status === 'archived') actions.push(h('button', { type: 'button', class: 'btn', onclick: () => { const r = app.act(() => G.setArchived(s, m.uid, false), `${m.name} returned to the forest.`); if (r.ok) app.closeModal(); } }, 'Return to forest'));

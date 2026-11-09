@@ -563,10 +563,18 @@ export class ForestView {
 
     // 3. depth-sorted: structures and mushrooms
     const items = [];
+    // spore clusters growing in pens (one per pen, in pen order)
+    const growing = this.app.game.activeBreedings(s);
+    const penIds = this.app.game.pens(s).map((o) => o.id);
+    const clusterOn = new Map(growing.map((r, i) => [penIds[i], r]).filter(([id]) => id));
     for (const a of areas) {
       for (const o of a.area.objects) {
         if (!inView(a.ox + o.x * TILE, a.oy + o.y * TILE)) continue;
-        items.push({ y: a.oy + o.y * TILE + TILE, draw: () => { ctx.save(); ctx.translate(a.ox, a.oy); drawStructure(ctx, STRUCTURES[o.def], o.x, o.y, o.state, rm ? 0 : t); ctx.restore(); } });
+        const rec = clusterOn.get(o.id);
+        items.push({ y: a.oy + o.y * TILE + TILE, draw: () => {
+          ctx.save(); ctx.translate(a.ox, a.oy); drawStructure(ctx, STRUCTURES[o.def], o.x, o.y, o.state, rm ? 0 : t); ctx.restore();
+          if (rec) drawCluster(ctx, a.ox + o.x * TILE + 8, a.oy + o.y * TILE + 9, rec.completesAt <= this.app.now(), t, rm);
+        } });
       }
     }
     for (const ag of this.agents.values()) if (inView(ag.x, ag.y)) items.push({ y: ag.y, draw: () => this.drawAgent(ctx, ag, t, rm) });
@@ -794,6 +802,20 @@ export class ForestView {
       ctx.fillRect(a.x - 1.5, top - 6 + (rm ? 0 : Math.sin(t * 3)), 3, 3);
     }
   }
+}
+
+/** A spore cluster growing in a pen; it glows and bobs when ready to hatch. */
+function drawCluster(ctx, x, y, ready, t, rm) {
+  const p = rm ? 0 : Math.sin(t * (ready ? 6 : 2)) * (ready ? 1 : 0.5);
+  if (ready) {
+    const a = rm ? 0.5 : 0.35 + 0.25 * Math.sin(t * 4);
+    ctx.fillStyle = `rgba(255,215,94,${a})`;
+    ctx.beginPath(); ctx.arc(x, y - 2 + p, 7, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.fillStyle = '#e8d8f0'; ctx.fillRect(x - 3, y - 4 + p, 6, 5);
+  ctx.fillStyle = '#c8a8e0'; ctx.fillRect(x - 2, y - 5 + p, 4, 1);
+  ctx.fillStyle = '#b88ad8'; ctx.fillRect(x - 4, y - 1 + p, 2, 2); ctx.fillRect(x + 2, y - 2 + p, 2, 2);
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(x - 2, y - 3 + p, 1, 1);
 }
 
 function clamp(v, lo, hi) {

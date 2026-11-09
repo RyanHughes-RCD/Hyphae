@@ -120,6 +120,7 @@ test('day phases follow local time; weather is stable per local date', () => {
 
 test('first breeding is free, then Glimmer is required and deducted exactly', () => {
   const s = G.newGame({ now: NOW, seed: 'cost', tzOffset: 0 });
+  G.devGivePen(s);
   const [a, b, c] = s.mushrooms;
   assert.equal(G.breedingCost(s), 0);
   const first = G.startBreeding(s, a.uid, b.uid, NOW);
@@ -182,6 +183,7 @@ test('guests cannot work and at least one parent must be owned', () => {
   const B = G.newGame({ now: NOW, seed: 'gB', tzOffset: 0 });
   const g1 = importGuest(B, exportMushroom(A, A.mushrooms[0].uid, NOW).code, NOW).guest;
   const g2 = importGuest(B, exportMushroom(A, A.mushrooms[1].uid, NOW).code, NOW).guest;
+  G.devGivePen(B);
   assert.equal(G.assignJob(B, g1.uid, 'gardener', NOW).ok, false);
   assert.equal(G.startBreeding(B, g1.uid, g2.uid, NOW).ok, false);
   const r = G.startBreeding(B, B.mushrooms[0].uid, g1.uid, NOW);
@@ -522,4 +524,42 @@ test('auto-jobs: stations that cannot be reached are never staffed', () => {
   G.autoAssign(s, NOW + 1);
   assert.ok(G.workersOn(s, 'mycologist').length >= 0);
   for (const m of s.mushrooms) if (m.work) assert.ok(G.objectReachable(s, m.work.structureId));
+});
+
+// ---------------------------------------------------------------- breeding pens
+
+test('breeding needs a pen you build; each pen grows one spore cluster at a time', () => {
+  const s = G.newGame({ now: NOW, seed: 'pens', tzOffset: 0 });
+  const [a, b, c] = s.mushrooms;
+  assert.equal(G.penCount(s), 0);
+  assert.match(G.startBreeding(s, a.uid, b.uid, NOW).reason, /Breeding Pen/);
+  // buy and place one: costs twigs and leaves
+  s.inventory.twigs = 100; s.inventory.leaves = 100;
+  let spot = null;
+  for (let y = 1; y < 8 && !spot; y++) for (let x = 1; x < 9 && !spot; x++) if (G.tileFree(s, 'clearing', x, y) && G.isReachable(s, 'clearing', x, y)) spot = [x, y];
+  assert.ok(G.buildStructure(s, 'breeding_pen', 'clearing', spot[0], spot[1], NOW).ok);
+  assert.equal(s.inventory.twigs, 92);
+  assert.equal(G.incubationSlots(s), 1);
+  assert.ok(G.startBreeding(s, a.uid, b.uid, NOW).ok);
+  s.mushrooms.push({ ...JSON.parse(JSON.stringify(c)), uid: 'm_fourth', name: 'Fourth' });
+  assert.match(G.startBreeding(s, c.uid, 'm_fourth', NOW).reason, /pen/);
+  // a pen with a cluster growing cannot be removed
+  const pen = G.pens(s)[0];
+  assert.equal(G.removeObject(s, pen.id).ok, false);
+  // at most three pens
+  G.devGivePen(s); G.devGivePen(s);
+  assert.equal(G.penCount(s), 3);
+  assert.equal(G.buildable(s, 'breeding_pen'), false);
+});
+
+test('schema 3 saves: the old Breeding Nook becomes a movable pen', () => {
+  const s = G.newGame({ now: NOW, seed: 'nook', tzOffset: 0 });
+  const old = JSON.parse(serialize(s));
+  old.schemaVersion = 3;
+  old.world.areas.clearing.objects.push({ id: 'oNook', def: 'breeding_nook', x: 5, y: 1, state: 'built', prefab: true });
+  const m = parseSave(JSON.stringify(old));
+  const pen = m.world.areas.clearing.objects.find((o) => o.id === 'oNook');
+  assert.equal(pen.def, 'breeding_pen');
+  assert.equal(pen.prefab, false);
+  assert.equal(G.penCount(m), 1);
 });
