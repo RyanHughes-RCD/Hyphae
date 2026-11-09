@@ -224,7 +224,7 @@ test('14. refreshing during incubation cannot change the offspring', () => {
   setConfig({ configVersion: 99, traits: { newAdvancedTraitChance: 1 }, inheritance: { attributeVariationChance: 1 } });
   const claim = G.claimBreeding(reloaded, r.record.id, NOW + 3600e3);
   assert.ok(claim.ok);
-  const claimed = { ...claim.mushroom, createdAt: r.record.offspring.createdAt, status: r.record.offspring.status };
+  const claimed = { ...claim.mushroom, createdAt: r.record.offspring.createdAt, status: r.record.offspring.status, work: null }; // auto-jobs give it work on hatching
   assert.equal(JSON.stringify(claimed), sealed);
   // claiming twice is impossible
   assert.equal(G.claimBreeding(reloaded, r.record.id, NOW + 7200e3).ok, false);

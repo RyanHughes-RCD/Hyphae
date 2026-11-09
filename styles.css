@@ -332,3 +332,6 @@ textarea.code { font-family: "Pixeloid Mono", ui-monospace, monospace; font-size
 /* colour genes */
 .hidden-swatch { display: inline-flex; align-items: center; justify-content: center; background: repeating-linear-gradient(45deg, #444 0 3px, #666 3px 6px); color: #fff; font-size: 9px; }
 .colour-options { display: inline-flex; gap: 4px; align-items: center; }
+
+/* auto-jobs */
+.pin { color: var(--accent); }

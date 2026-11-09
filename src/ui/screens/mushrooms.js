@@ -97,16 +97,20 @@ export function mushroomDetail(app, m) {
     if (m.work) {
       const est = G.estimateJob(s, m, m.work.jobId, now);
       workInfo.push(h('p', {}, h('b', {}, app.jobName(m.work.jobId)), ` — ${est.label}, score ${fmt(est.score)}, productivity ${(est.eff * (1 + est.bonus.sum)).toFixed(2)}×`),
+        h('p', { class: 'small muted' }, m.jobPin === m.work.jobId ? '📌 You placed it here.' : 'Chose this job itself — the one that suits it best right now.'),
         est.bonus.parts.length ? h('p', { class: 'small perk-line' }, 'Active now: ', est.bonus.parts.map((p) => `${p.label} +${Math.round(p.value * 100)}%`).join(' · ')) : null);
-    } else workInfo.push(h('p', {}, 'Enjoying some free time.'));
+    } else workInfo.push(h('p', {}, m.jobPin === 'rest' ? 'Taking a break until you put it back to work.' : 'Enjoying some free time — every place it could work is taken.'));
   } else if (m.status === 'archived') workInfo.push(h('p', {}, 'Resting in the Spore Archive. It can be bred and shared, but not work.'));
   else if (m.status === 'guest') workInfo.push(h('p', {}, `A Guest from ${m.origin?.forestName || 'a friend'}'s forest — a genetic donor. Guests cannot work and never grant resources.`));
   else workInfo.push(h('p', {}, 'A Wild Visitor. It can be bred with while it stays.'));
   if (m.restUntil > now) workInfo.push(h('p', { class: 'small' }, 'Resting after breeding: ', h('span', { dataset: { countdown: m.restUntil, done: 'rested' } }, fmtDuration(m.restUntil - now))));
 
   const actions = [];
-  if (owned && m.status === 'resident') actions.push(h('button', { type: 'button', class: 'btn primary', onclick: () => jobChooser(app, m) }, m.work ? 'Change job' : 'Assign job'));
-  if (owned && m.work) actions.push(h('button', { type: 'button', class: 'btn', onclick: () => { app.act(() => G.unassign(s, m.uid)); app.closeModal(); } }, 'Stop working'));
+  if (owned && m.status === 'resident') {
+    actions.push(h('button', { type: 'button', class: 'btn primary', onclick: () => jobChooser(app, m) }, 'Choose its job'));
+    if (m.jobPin) actions.push(h('button', { type: 'button', class: 'btn', onclick: () => { app.act(() => G.unpinJob(s, m.uid, app.now()), m.jobPin === 'rest' ? `${m.name} is back to work.` : `${m.name} will choose its own job.`); app.closeModal(); app.openMushroom(m.uid); } }, m.jobPin === 'rest' ? 'Back to work' : 'Let it choose'));
+    if (m.jobPin !== 'rest') actions.push(h('button', { type: 'button', class: 'btn', onclick: () => { app.act(() => G.unassign(s, m.uid, app.now()), `${m.name} is taking a break.`); app.closeModal(); app.openMushroom(m.uid); } }, 'Give a break'));
+  }
   actions.push(h('button', { type: 'button', class: 'btn', onclick: () => { app.ui.breed = { a: m.uid, b: app.ui.breed.b === m.uid ? null : app.ui.breed.b, picking: null }; app.closeAllModals(); app.go('breed'); } }, 'Breed'));
   if (owned) actions.push(h('button', { type: 'button', class: 'btn', onclick: () => { const r = exportMushroom(s, m.uid, Date.now()); if (r.ok) shareModal(app, m, r.code); else app.toast(r.reason, 'error'); } }, 'Share'));
   if (owned && m.status === 'resident') actions.push(h('button', { type: 'button', class: 'btn', onclick: () => { app.act(() => G.setArchived(s, m.uid, true), `${m.name} moved to the Spore Archive.`); app.closeModal(); } }, 'Archive'));
@@ -146,10 +150,12 @@ function jobChooser(app, m) {
   const jobs = JOBS.filter((j) => G.jobUnlocked(s, j.id));
   const md = app.modal(h('div', { class: 'picker' }, jobs.map((j) => {
     const est = G.estimateJob(s, m, j.id, now);
-    const full = G.workersOn(s, j.id).filter((x) => x.uid !== m.uid).length >= G.jobSlots(s, j.id);
+    const others = G.workersOn(s, j.id).filter((x) => x.uid !== m.uid);
+    // a full job can still be chosen: the worker who suits it least steps aside (unless you placed them all)
+    const full = others.length >= G.jobSlots(s, j.id) && others.every((x) => x.jobPin === j.id);
     return h('button', {
       type: 'button', class: 'pick-row' + (m.work?.jobId === j.id ? ' selected' : '') + (full ? ' disabled' : ''), disabled: full,
       onclick: () => { md.close(); app.act(() => G.assignJob(s, m.uid, j.id, app.now()), `${m.name} is now a ${j.name}.`); app.closeModal(); app.openMushroom(m.uid); },
-    }, h('div', { class: 'grow' }, h('b', {}, j.name), h('div', { class: 'small' }, full ? 'All slots full' : `Score ${fmt(est.score)} · ${est.label} · ${(est.eff * (1 + est.bonus.sum)).toFixed(2)}×`)));
-  })), { title: `Job for ${m.name}` });
+    }, h('div', { class: 'grow' }, h('b', {}, j.name), h('div', { class: 'small' }, full ? 'Full — every place was chosen by you' : `Score ${fmt(est.score)} · ${est.label} · ${(est.eff * (1 + est.bonus.sum)).toFixed(2)}×`)));
+  })), { title: `Choose a job for ${m.name}` });
 }

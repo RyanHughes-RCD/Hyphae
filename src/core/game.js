@@ -52,14 +52,15 @@ export function newGame({ now = Date.now(), seed = freshSeed(), forestName = 'My
     trade: { dateKey: null, sold: {} },
     tutorials: {},
     importedShareIds: [],
-    settings: { sound: false, reducedMotion: false, dev: false },
+    settings: { sound: false, reducedMotion: false, dev: false, autoJobs: true },
     dev: { timeOffset: 0, override: null, force: {} },
     activity: [],
   };
   for (const r of ['twigs', 'leaves']) state.inventory[r] = 4;
   createStartClearing(state, now);
   for (const m of state.mushrooms) recordDiscovery(state, m);
-  event(state, 'welcome', 'Welcome to your forest', 'Three little mushrooms have made the clearing their home. Give them jobs, then try breeding two of them at the Breeding Nook.');
+  autoAssign(state, now);
+  event(state, 'welcome', 'Welcome to your forest', 'Three little mushrooms have made the clearing their home and have already found the jobs that suit them best. Try breeding two of them at the Breeding Nook.');
   return state;
 }
 
@@ -494,6 +495,7 @@ function stopUnreachableWork(state) {
     if (m.work && !objectReachable(state, m.work.structureId)) {
       event(state, 'blocked', `${m.name} can't reach work`, 'The way is blocked by water or thicket. Build a bridge or clear a path.');
       m.work = null;
+      if (m.jobPin && m.jobPin !== 'rest') m.jobPin = null;
     }
   }
 }
@@ -589,6 +591,7 @@ export function restoreStructure(state, objectId, now) {
     state.discoveries.jobs[def.job] = true;
     event(state, 'job', `Job unlocked: ${JOB_BY_ID[def.job].name}`, JOB_BY_ID[def.job].desc);
   }
+  autoAssign(state, now);
   checkStages(state);
   return ok();
 }
@@ -638,6 +641,7 @@ export function buildStructure(state, defId, areaId, x, y, now) {
   pay(state, cost);
   state.world.areas[areaId].objects.push({ id: 'o' + state.nextObjectId++, def: defId, x, y, state: 'built', prefab: false });
   bumpWorld(state);
+  autoAssign(state, now);
   checkStages(state);
   return ok();
 }
@@ -750,27 +754,136 @@ export function skillLabel(score) {
   return 'Master';
 }
 
+/** Workstations for a job that are built and that mushrooms can reach. */
+function reachableStations(state, jobId) {
+  const job = JOB_BY_ID[jobId];
+  return allObjects(state).filter((o) => o.def === job.structure && o.state === 'built' && objectReachable(state, o.id));
+}
+
+/**
+ * The player picks a job: the mushroom is pinned there (auto-jobs leave it alone).
+ * If every place is taken, the worker who suits it least (and isn't pinned) steps aside.
+ */
 export function assignJob(state, uid, jobId, now) {
   const m = state.mushrooms.find((x) => x.uid === uid);
   if (!m) return fail('Only your own mushrooms can work.');
   if (m.status !== 'resident') return fail('Archived mushrooms cannot work. Move it back to the forest first.');
   if (!jobUnlocked(state, jobId)) return fail('That job is still locked.');
-  const job = JOB_BY_ID[jobId];
+  const stations = reachableStations(state, jobId);
+  if (!stations.length) return fail('Your mushrooms cannot reach that workstation — bridge the water or clear the thicket.');
+  if (m.work?.jobId === jobId) { m.jobPin = jobId; return ok(); }
   const others = workersOn(state, jobId).filter((x) => x.uid !== uid);
-  const structures = allObjects(state).filter((o) => o.def === job.structure && o.state === 'built');
-  const reachable = structures.filter((o) => objectReachable(state, o.id));
-  if (!reachable.length) return fail('Your mushrooms cannot reach that workstation — bridge the water or clear the thicket.');
-  const free = reachable.find((o) => others.filter((x) => x.work.structureId === o.id).length < STRUCTURES[o.def].slots);
-  if (!free) return fail('All workstations for this job are full. Build or restore another.');
-  if (m.work?.jobId === jobId) return ok();
+  let free = stations.find((o) => others.filter((x) => x.work.structureId === o.id).length < STRUCTURES[o.def].slots);
+  if (!free) {
+    const bumpable = others.filter((x) => !x.jobPin).sort((a, b) => jobFit(state, a, JOB_BY_ID[jobId]) - jobFit(state, b, JOB_BY_ID[jobId]));
+    if (!bumpable.length) return fail('Every place at this job is held by a mushroom you placed there. Build or restore another workstation.');
+    const out = bumpable[0];
+    free = objectById(state, out.work.structureId).obj;
+    out.work = null;
+  }
   m.work = { jobId, structureId: free.id, anchor: now, cycles: 0, carry: {}, assignedAt: now };
+  m.jobPin = jobId;
+  autoAssign(state, now);
   return ok();
 }
 
-export function unassign(state, uid) {
+/** Let the mushroom choose its own job again. */
+export function unpinJob(state, uid, now) {
   const m = state.mushrooms.find((x) => x.uid === uid);
-  if (m) m.work = null;
+  if (!m) return fail('Unknown mushroom.');
+  m.jobPin = null;
+  autoAssign(state, now);
   return ok();
+}
+
+/** Keep the mushroom off work until you choose otherwise. */
+export function unassign(state, uid, now = 0) {
+  const m = state.mushrooms.find((x) => x.uid === uid);
+  if (m) {
+    m.work = null;
+    m.jobPin = 'rest';
+  }
+  autoAssign(state, now);
+  return ok();
+}
+
+/**
+ * How well a mushroom suits a job: its job score, raised by Perks and Mutations
+ * that always help that kind of work (time- and weather-bound bonuses don't count).
+ */
+export function jobFit(state, m, job) {
+  const { final } = statsOf(state, m);
+  let boost = 0;
+  if (state.unlocks.perks) for (const p of m.perks) {
+    const def = PERK_BY_ID[p.perkId];
+    if (def?.effect === 'prod' && def.condition === 'family:' + job.family) boost += def.levels[p.level - 1];
+  }
+  if (state.unlocks.mutations && m.mutation) {
+    const eff = MUTATION_BY_ID[m.mutation.mutationId]?.effect;
+    if (eff?.type === 'prod' && eff.condition === 'family:' + job.family) boost += eff.value;
+  }
+  return jobScore(final, job) * (1 + boost);
+}
+
+/**
+ * Auto-jobs: give every free resident the best job it can get. Mushrooms are
+ * matched best-fit first across all open places, so a better-suited mushroom
+ * takes a full station's place and the one it replaces moves to its next best
+ * job. Mushrooms already in the right place keep their spot and progress.
+ * Pinned mushrooms (chosen by the player) are never moved.
+ */
+export function autoAssign(state, now) {
+  if (state.settings?.autoJobs === false) return [];
+  const moves = [];
+  const jobs = JOBS.filter((j) => jobUnlocked(state, j.id));
+  const stations = new Map(jobs.map((j) => [j.id, reachableStations(state, j.id)]));
+  const capacity = new Map(jobs.map((j) => [j.id, stations.get(j.id).reduce((n, o) => n + STRUCTURES[o.def].slots, 0)]));
+  const residentsNow = state.mushrooms.filter((m) => m.status === 'resident');
+  // pinned mushrooms keep their places (if they can still reach them)
+  const used = new Map(jobs.map((j) => [j.id, 0]));
+  const free = [];
+  for (const m of residentsNow) {
+    const pinnedHere = m.jobPin && m.jobPin !== 'rest' && m.work?.jobId === m.jobPin && stations.get(m.jobPin)?.some((o) => o.id === m.work.structureId);
+    if (pinnedHere) used.set(m.jobPin, used.get(m.jobPin) + 1);
+    else if (m.jobPin === 'rest') { if (m.work) m.work = null; } else free.push(m);
+  }
+  // best fit first over every (mushroom, job) pair
+  const pairs = [];
+  for (const m of free) for (const j of jobs) {
+    const fit = jobFit(state, m, j);
+    // a small preference for the current job avoids swapping between near-equal choices
+    pairs.push({ m, j, fit: fit + (m.work?.jobId === j.id ? 0.5 : 0) });
+  }
+  pairs.sort((a, b) => b.fit - a.fit || JOBS.indexOf(a.j) - JOBS.indexOf(b.j) || (a.m.uid < b.m.uid ? -1 : 1));
+  const target = new Map();
+  for (const { m, j } of pairs) {
+    if (target.has(m.uid) || used.get(j.id) >= capacity.get(j.id)) continue;
+    target.set(m.uid, j.id);
+    used.set(j.id, used.get(j.id) + 1);
+  }
+  // choose stations: keep current ones where possible, then fill free places
+  const occupancy = new Map();
+  const take = (o) => occupancy.set(o.id, (occupancy.get(o.id) || 0) + 1);
+  for (const m of residentsNow) if (m.work && (!free.includes(m) || target.get(m.uid) === m.work.jobId) && stations.get(m.work.jobId)?.some((o) => o.id === m.work.structureId)) take({ id: m.work.structureId });
+  for (const m of free) {
+    const jobId = target.get(m.uid);
+    const before = m.work?.jobId || null;
+    if (jobId && before === jobId && stations.get(jobId).some((o) => o.id === m.work.structureId)) continue; // stays put
+    if (!jobId) {
+      if (m.work) { m.work = null; moves.push({ m, from: before, to: null }); }
+      continue;
+    }
+    const st = stations.get(jobId).find((o) => (occupancy.get(o.id) || 0) < STRUCTURES[o.def].slots);
+    if (!st) continue;
+    take(st);
+    m.work = { jobId, structureId: st.id, anchor: now, cycles: 0, carry: {}, assignedAt: now };
+    moves.push({ m, from: before, to: jobId });
+  }
+  for (const mv of moves) {
+    state.activity.unshift({ t: now, title: mv.to ? `${mv.m.name} ${mv.from ? 'moved to' : 'started work as a'} ${JOB_BY_ID[mv.to].name}` : `${mv.m.name} has no job right now` });
+  }
+  if (state.activity.length > 40) state.activity.length = 40;
+  return moves;
 }
 
 function cycleDuration(m, job, cfg) {
@@ -1044,6 +1157,7 @@ export function advance(state, now) {
   state.lastSeenAt = now;
   checkStages(state);
   checkUnlocks(state, now);
+  report.moves = autoAssign(state, now);
   return report;
 }
 
@@ -1141,6 +1255,7 @@ export function claimBreeding(state, id, now) {
   state.breedingsCompleted++;
   recordDiscovery(state, m);
   if (m.status === 'archived') event(state, 'archive', `${m.name} went to the Spore Archive`, 'Your forest is full. Build Mushroom Homes for more residents. Archived mushrooms can still be bred and shared.');
+  autoAssign(state, now);
   checkUnlocks(state, now);
   // keep the record history bounded; claimed records only need their id for double-claim protection
   const claimed = state.breedings.filter((b) => b.state === 'claimed');
@@ -1162,6 +1277,7 @@ export function setArchived(state, uid, archived) {
     m.work = null;
     m.status = 'archived';
   }
+  autoAssign(state, state.lastSeenAt);
   return ok();
 }
 

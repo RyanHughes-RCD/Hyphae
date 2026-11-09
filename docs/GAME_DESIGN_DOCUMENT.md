@@ -2,7 +2,7 @@
 
 ## A cozy breeding, collecting, and forest-life game
 
-**Game Design Document | Version 0.6 | November 2026**
+**Game Design Document | Version 0.7 | November 2026**
 
 > **Design direction:** Begin with three ordinary mushrooms. Breed them,
 > generation by generation, into prized specialists. Give them meaningful
@@ -23,6 +23,7 @@
 | 0.4 | Nov 2026 | One continuous forest (D-16): every clearing and job lives on the same forest screen. The forest grows when the player expands it north, east, south or west of a clearing; each story clearing's structures spawn at random positions in the new clearing. Quiet glades (plain clearings) can be bought for building space after the Woodland Workshop. Save schema 2 with migration. |
 | 0.5 | Nov 2026 | Wild, randomly generated expansions that must be cleaned up (clutter and thicket) and organised (every structure can be moved); a river that grows with each expansion and must be bridged; drag-and-drop breeding pen; signposts removed; mushrooms shown at 65% size. |
 | 0.6 | Nov 2026 | Colour genetics redone (D-18): two colour genes per mushroom (one may be hidden and resurface in offspring), colour sports to neighbouring shades, and larger heritable colour shifts. Save schema 3. |
+| 0.7 | Nov 2026 | Auto-jobs (D-19): mushrooms take the job that suits them best, overflow to their next best, and are swapped off when a better-suited mushroom arrives; player pins and breaks still work. |
 
 ### 0.2 Conventions
 
@@ -1147,6 +1148,22 @@ backlog and use the same primary/secondary stat model.
 
 ### 11.2 Job assignment
 
+**Auto-jobs (v0.7, decision D-19).** Mushrooms place themselves. Every
+resident is scored for every unlocked, reachable job (its job score, raised
+by Perks and Mutations that always help that kind of work), and places are
+filled best-fit first across the whole forest. When a station is full, the
+best-suited mushrooms get its places and the rest take their next best job;
+a better-suited newcomer swaps a weaker worker off. Mushrooms already in the
+right place keep their spot and work progress (a tiny preference for the
+current job prevents swapping between near-equal choices). This runs after
+time passes and after anything that changes the options (hatching,
+restoring or building a station, bridges, archiving). The player can still
+**pin** a mushroom to a job (it then never moves, and a full job's least
+suited unpinned worker steps aside), **let it choose** again, or **give it a
+break**. Auto-jobs can be turned off in Settings.
+
+Manual placement (pinning) rules:
+
 - One primary job per mushroom in the MVP.
 - The player assigns a mushroom to an unlocked job and, where relevant, a
   target area, workstation, or habitat. Workstations have worker slots.
@@ -1966,6 +1983,7 @@ feel of breeding and visible forest life before adding more content.
 | D-13 | Affinity | Derived from highest final stat, 8 names. Approved. |
 | D-14 | Breeding cost | One free breeding, then Glimmer (soft currency). |
 | D-15 | Development stage order | Strictly linear, in the order listed. |
+| D-19 | Job assignment | Automatic best-fit placement with swapping; player can pin, unpin or rest a mushroom; toggle in Settings. |
 | D-18 | Colour genetics | Two colour genes (shown + hidden), sports, and larger heritable shifts. |
 | D-17 | Breeding parent selection | Drag and drop (or tap) mushrooms into a breeding pen. |
 | D-16 | Forest layout | One continuous forest; the player expands it north, east, south or west, and new job structures spawn at random in the new clearing. |

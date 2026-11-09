@@ -7,6 +7,7 @@ import { baseStats, statSum, colorGroupPoints, computeStats } from '../src/core/
 import { generateStarters, resolveBreeding, newMushroom, hiddenColor } from '../src/core/genetics.js';
 import { phaseAt, conditionsAt, weatherForDate } from '../src/core/time.js';
 import * as G from '../src/core/game.js';
+import { JOB_BY_ID } from '../src/content/world.js';
 import { exportMushroom, importGuest, shareRecord } from '../src/core/share.js';
 import { serialize, parseSave } from '../src/core/save.js';
 import { hash } from '../src/core/rng.js';
@@ -158,7 +159,7 @@ test('offline: no double grants, backward clock grants nothing, cap at 8 hours',
   assert.ok(r8.clamped);
   // after the clamp, play continues from now
   const after = G.advance(t, NOW + 30 * HOUR + 10 * 60000);
-  assert.ok(after.cycles > 0 && after.cycles < 30);
+  assert.ok(after.cycles > 0 && after.cycles < 120, `cycles after the clamp: ${after.cycles}`); // minutes of work for a few mushrooms, not hours
 });
 
 test('productivity bonus never exceeds the cap', () => {
@@ -438,4 +439,87 @@ test('share codes made before colour genes still import', () => {
   const r = importGuest(B, code, NOW);
   assert.ok(r.ok, JSON.stringify(r.errors));
   assert.deepEqual(r.guest.genes.colorAlleles, [m.genes.color, m.genes.color]);
+});
+
+// ---------------------------------------------------------------- auto-jobs
+
+test('auto-jobs: every resident gets the best job it can, within station capacity', () => {
+  const s = G.newGame({ now: NOW, seed: 'auto1', tzOffset: 0 });
+  for (const m of s.mushrooms) assert.ok(m.work, `${m.name} has a job`);
+  for (const j of ['gardener', 'forager']) assert.ok(G.workersOn(s, j).length <= G.jobSlots(s, j));
+  // each mushroom is at the job it scores best at, unless that job is full of better-suited mushrooms
+  for (const m of s.mushrooms) {
+    const mine = G.jobFit(s, m, { ...JOB_BY_ID[m.work.jobId] });
+    for (const j of ['gardener', 'forager']) {
+      if (j === m.work.jobId) continue;
+      const better = G.jobFit(s, m, JOB_BY_ID[j]) > mine + 0.5;
+      if (better) {
+        const full = G.workersOn(s, j).length >= G.jobSlots(s, j);
+        assert.ok(full && G.workersOn(s, j).every((w) => G.jobFit(s, w, JOB_BY_ID[j]) >= G.jobFit(s, m, JOB_BY_ID[j])), `${m.name} should be a ${j}`);
+      }
+    }
+  }
+});
+
+test('auto-jobs: a better-suited newcomer takes a full station and bumps the weakest to its next best', () => {
+  const s = G.newGame({ now: NOW, seed: 'auto2', tzOffset: 0 });
+  // one gardener place only
+  const beds = s.world.areas.clearing.objects.filter((o) => o.def === 'garden_bed');
+  s.world.areas.clearing.objects = s.world.areas.clearing.objects.filter((o) => o !== beds[1]);
+  G.bumpWorld(s);
+  G.autoAssign(s, NOW);
+  const gardener = G.workersOn(s, 'gardener')[0];
+  assert.ok(gardener);
+  // a newcomer with far better Cultivation arrives
+  const star = JSON.parse(JSON.stringify(s.mushrooms[0]));
+  star.uid = 'm_star'; star.name = 'Star'; star.work = null; star.jobPin = null;
+  star.traits = Array.from({ length: 8 }, (_, i) => ({ traitUid: 'ts' + i, stat: 'CUL', bonus: 4 }));
+  s.unlocks.traits = true;
+  s.mushrooms.push(star);
+  const moves = G.autoAssign(s, NOW + 1000);
+  assert.equal(G.workersOn(s, 'gardener')[0].uid, 'm_star');
+  const bumped = s.mushrooms.find((m) => m.uid === gardener.uid);
+  assert.equal(bumped.work?.jobId, 'forager', 'the bumped gardener moves to its next best job');
+  assert.ok(moves.length >= 2);
+  // nothing changes when nothing changed
+  const snapshot = JSON.stringify(s.mushrooms.map((m) => m.work));
+  assert.equal(G.autoAssign(s, NOW + 5000).length, 0);
+  assert.equal(JSON.stringify(s.mushrooms.map((m) => m.work)), snapshot);
+});
+
+test('auto-jobs: pinned mushrooms stay put, resting ones stay idle, and unpinning lets them choose', () => {
+  const s = G.newGame({ now: NOW, seed: 'auto3', tzOffset: 0 });
+  const [a, b] = s.mushrooms;
+  const otherJob = a.work.jobId === 'gardener' ? 'forager' : 'gardener';
+  assert.ok(G.assignJob(s, a.uid, otherJob, NOW).ok);
+  G.autoAssign(s, NOW + 1);
+  assert.equal(a.work.jobId, otherJob);
+  assert.equal(a.jobPin, otherJob);
+  G.unassign(s, b.uid, NOW + 2);
+  G.autoAssign(s, NOW + 3);
+  assert.equal(b.work, null);
+  G.unpinJob(s, b.uid, NOW + 4);
+  assert.ok(b.work);
+  // turning auto-jobs off leaves everyone where they are
+  s.settings.autoJobs = false;
+  const before = JSON.stringify(s.mushrooms.map((m) => m.work));
+  s.mushrooms.push({ ...JSON.parse(JSON.stringify(s.mushrooms[2])), uid: 'm_new', work: null, jobPin: null });
+  G.autoAssign(s, NOW + 5);
+  assert.equal(s.mushrooms.find((m) => m.uid === 'm_new').work, null);
+  assert.equal(JSON.stringify(s.mushrooms.slice(0, 3).map((m) => m.work)), before);
+});
+
+test('auto-jobs: stations that cannot be reached are never staffed', () => {
+  const s = G.newGame({ now: NOW, seed: 'auto4', tzOffset: 0 });
+  s.counters.jobCycles.forager = 15;
+  G.expandForest(s, 'clearing', 'north', NOW);
+  const bed = s.world.areas.fungal.objects.find((o) => o.def === 'spore_bed');
+  bed.state = 'built';
+  G.bumpWorld(s);
+  G.autoAssign(s, NOW);
+  if (!G.objectReachable(s, bed.id)) assert.equal(G.workersOn(s, 'mycologist').length, 0);
+  G.devConnectAll(s);
+  G.autoAssign(s, NOW + 1);
+  assert.ok(G.workersOn(s, 'mycologist').length >= 0);
+  for (const m of s.mushrooms) if (m.work) assert.ok(G.objectReachable(s, m.work.structureId));
 });

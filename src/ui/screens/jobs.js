@@ -24,12 +24,15 @@ export function jobCard(app, job, inModal = false) {
     !unlocked ? h('p', { class: 'small warn' }, st && !G.stageDiscovered(s, st.id) ? 'Expand the forest to discover this job.' : `Restore the ${STRUCTURES[job.structure].name} in the ${st ? st.name : 'forest'} to unlock.`) : null,
     unlocked ? h('div', { class: 'workers' }, workers.length ? workers.map((m) => {
       const est = G.estimateJob(s, m, job.id, app.now());
+      const pinned = m.jobPin === job.id;
       return h('div', { class: 'worker' },
         h('button', { type: 'button', class: 'linkish', onclick: () => app.openMushroom(m.uid) }, mushroomThumb(app, m, 1), h('span', {}, m.name)),
-        h('span', { class: 'small' }, `${est.label} · ${(est.eff * (1 + est.bonus.sum)).toFixed(2)}×`),
-        h('button', { type: 'button', class: 'btn small', onclick: () => { app.act(() => G.unassign(s, m.uid)); if (inModal) app.closeModal(); } }, 'Remove'));
-    }) : h('p', { class: 'small muted' }, 'No one is working here.')) : null,
-    unlocked ? h('button', { type: 'button', class: 'btn primary', disabled: workers.length >= slots, onclick: () => assignPicker(app, job.id) }, workers.length >= slots ? 'All slots full — build another' : 'Assign a mushroom') : null,
+        h('span', { class: 'small' }, `${est.label} · ${(est.eff * (1 + est.bonus.sum)).toFixed(2)}×`, pinned ? h('span', { class: 'pin', title: 'You placed it here' }, ' 📌 placed by you') : ''),
+        pinned
+          ? h('button', { type: 'button', class: 'btn small', onclick: () => { app.act(() => G.unpinJob(s, m.uid, app.now()), `${m.name} will choose its own job.`); if (inModal) app.closeModal(); } }, 'Let it choose')
+          : h('button', { type: 'button', class: 'btn small', onclick: () => { app.act(() => G.unassign(s, m.uid, app.now()), `${m.name} is taking a break.`); if (inModal) app.closeModal(); } }, 'Give a break'));
+    }) : h('p', { class: 'small muted' }, 'No one is working here yet.')) : null,
+    unlocked ? h('button', { type: 'button', class: 'btn', onclick: () => assignPicker(app, job.id) }, 'Place a mushroom here') : null,
   );
 }
 
@@ -40,7 +43,10 @@ export function renderJobs(app) {
   const idle = G.residents(s).filter((m) => !m.work);
   return h('div', {},
     h('h2', { class: 'screen-title' }, 'Jobs'),
-    idle.length ? h('div', { class: 'card notice' }, `${idle.length} resident(s) have free time: `, idle.map((m) => m.name).join(', '), '.') : null,
+    h('p', { class: 'small muted' }, s.settings.autoJobs === false
+      ? 'Auto-jobs are off: place mushrooms yourself (turn them back on in More → Settings).'
+      : 'Mushrooms take the job that suits them best. When a station is full the best-suited get the places and the rest move to their next best job. Place one yourself to pin it there.'),
+    idle.length ? h('div', { class: 'card notice' }, `${idle.length} resident(s) have free time: `, idle.map((m) => m.name + (m.jobPin === 'rest' ? ' (on a break)' : '')).join(', '), '.') : null,
     unlocked.map((j) => jobCard(app, j)),
     stageCard(app),
     h('h3', { class: 'sub' }, 'Locked jobs'),
