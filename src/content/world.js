@@ -47,13 +47,16 @@ export const JOBS = [
   { id: 'festival_helper', name: 'Festival Helper', family: 'social', primary: 'SOC', secondary: 'CON', structure: 'gathering_circle', duration: 70, outputs: { decorations: 0.6 }, anim: 'tend', desc: 'Makes festival decorations.' },
   { id: 'gift_maker', name: 'Gift Maker', family: 'social', primary: 'SOC', secondary: 'MAG', structure: 'gift_table', duration: 70, outputs: { gifts: 0.5, charms: 0.2 }, anim: 'tend', desc: 'Crafts gifts and charms.' },
 ];
+/** How many tiles across (and down) a structure covers; it is centred on its own tile. */
+export const sizeOf = (defId) => STRUCTURES[defId]?.size || 1;
+
 export const JOB_BY_ID = Object.fromEntries(JOBS.map((j) => [j.id, j]));
 
 // kind: work | special | home | decor
 export const STRUCTURES = {
   garden_bed: { name: 'Garden Bed', kind: 'work', job: 'gardener', slots: 1, cost: { twigs: 8, leaves: 4 }, buildable: true, sprite: 'bed', store: 'workstation', desc: 'Another Gardener place: berries, seeds and flowers.' },
   wild_thicket: { name: 'Wild Thicket', kind: 'work', job: 'forager', slots: 3, cost: { seeds: 4, leaves: 6 }, buildable: true, sprite: 'bush', store: 'workstation', desc: 'Room for three more Foragers.' },
-  breeding_pen: { name: 'Breeding Pen', kind: 'pen', cost: { twigs: 8, leaves: 6 }, buildable: true, store: 'breeding', sprite: 'pen', desc: 'Pair two mushrooms here to grow a spore cluster. Each pen incubates one at a time (up to 3 pens).' },
+  breeding_pen: { name: 'Breeding Pen', kind: 'pen', size: 3, cost: { twigs: 8, leaves: 6 }, buildable: true, store: 'breeding', sprite: 'pen', desc: 'Pair two mushrooms here to grow a spore cluster. Each pen incubates one at a time (up to 3 pens).' },
   trading_stump: { name: 'Trading Stump', kind: 'special', sprite: 'stump' },
   spore_bed: { name: 'Spore Bed', kind: 'work', job: 'mycologist', slots: 2, cost: { twigs: 10, leaves: 10 }, buildable: true, buildCost: { compost: 4, twigs: 6 }, sprite: 'sporebed', store: 'workstation', desc: 'Two more Mycologist places.' },
   workbench: { name: 'Workbench', kind: 'work', job: 'woodworker', slots: 2, cost: { twigs: 15, bark: 6, stones: 8 }, sprite: 'bench', buildable: true, store: 'workstation', desc: 'Two more Woodworker places.' },
@@ -67,8 +70,8 @@ export const STRUCTURES = {
   moonlit_grove: { name: 'Moonlit Grove', kind: 'work', job: 'spirit_keeper', slots: 2, cost: { seeds: 10, dew: 10, moonlight: 4 }, sprite: 'grove', buildable: true, store: 'workstation', desc: 'Two more Spirit Keeper places.' },
   gathering_circle: { name: 'Gathering Circle', kind: 'work', job: 'festival_helper', slots: 2, cost: { planks: 15, flowers: 10 }, sprite: 'circle', buildable: true, store: 'workstation', desc: 'Two more Festival Helper places.' },
   gift_table: { name: 'Gift Table', kind: 'work', job: 'gift_maker', slots: 2, cost: { planks: 10, spiritDew: 4 }, sprite: 'table', buildable: true, store: 'workstation', desc: 'Two more Gift Maker places.' },
-  mushroom_home: { name: 'Mushroom Home', kind: 'home', capacity: 2, cost: { planks: 6, stones: 4 }, buildable: true, requiresStage: 'workshop', sprite: 'home', store: 'housing', desc: 'Room for 2 more resident mushrooms.' },
-  cozy_home: { name: 'Cozy Home', kind: 'home', capacity: 4, cost: { planks: 12, decorations: 4, stones: 6 }, buildable: true, requiresStage: 'community', sprite: 'cozyhome', store: 'housing', desc: 'Room for 4 more resident mushrooms.' },
+  mushroom_home: { name: 'Mushroom Home', kind: 'home', size: 3, capacity: 2, cost: { planks: 6, stones: 4 }, buildable: true, requiresStage: 'workshop', sprite: 'home', store: 'housing', desc: 'Room for 2 more resident mushrooms.' },
+  cozy_home: { name: 'Cozy Home', kind: 'home', size: 3, capacity: 4, cost: { planks: 12, decorations: 4, stones: 6 }, buildable: true, requiresStage: 'community', sprite: 'cozyhome', store: 'housing', desc: 'Room for 4 more resident mushrooms.' },
   // decorations — habitat influence for Wild Visitors (GDD 5.3)
   flower_patch: { name: 'Flower Patch', kind: 'decor', cost: { seeds: 2 }, buildable: true, habitat: 'flowers', sprite: 'flowers', store: 'decor', desc: 'Pretty, and attracts flower-loving Wild Visitors.' },
   fern_clump: { name: 'Fern Clump', kind: 'decor', cost: { leaves: 4 }, buildable: true, habitat: 'shade', sprite: 'fern', store: 'decor', desc: 'Adds shade; attracts shade-loving Wild Visitors.' },

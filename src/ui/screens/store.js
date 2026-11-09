@@ -41,10 +41,13 @@ function itemCard(app, defId) {
   const afford = G.canAfford(s, cost);
   const n = owned(s, defId);
   return h('article', { class: 'store-item' + (locked ? ' locked' : '') },
-    preview((ctx) => { ctx.translate(4, 6); drawStructure(ctx, d, 0, 0, 'built', 0); }),
+    d.size > 1
+      ? preview((ctx) => { ctx.translate(4 + 16, 4 + 16); drawStructure(ctx, d, 0, 0, 'built', 0); }, 56, 56)
+      : preview((ctx) => { ctx.translate(4, 6); drawStructure(ctx, d, 0, 0, 'built', 0); }),
     h('div', { class: 'store-body' },
       h('h3', {}, d.name),
       h('p', { class: 'small' }, d.desc || ''),
+      d.size > 1 ? h('p', { class: 'small muted' }, `Covers ${d.size}×${d.size} tiles.`) : null,
       n ? h('p', { class: 'small muted' }, `You have ${n}`) : null,
       locked ? h('p', { class: 'small warn' }, locked) : costView(s, cost),
       h('button', {
@@ -61,7 +64,7 @@ function upgradeCard(app) {
   const def = BREEDING_STATIONS[next];
   const locked = def.requiresStage && !G.stageComplete(s, def.requiresStage) ? `Restore the ${STAGE_BY_ID[def.requiresStage].name} first.` : null;
   return h('article', { class: 'store-item' + (locked ? ' locked' : '') },
-    preview((ctx) => { ctx.translate(4, 6); drawStructure(ctx, STRUCTURES.breeding_pen, 0, 0, 'built', 0); ctx.fillStyle = next === 'spore_cradle' ? 'rgba(184,138,216,0.55)' : 'rgba(200,210,255,0.55)'; ctx.fillRect(2, 2, 12, 3); }),
+    preview((ctx) => { ctx.translate(20, 20); drawStructure(ctx, STRUCTURES.breeding_pen, 0, 0, 'built', 0); ctx.fillStyle = next === 'spore_cradle' ? 'rgba(184,138,216,0.55)' : 'rgba(200,210,255,0.55)'; ctx.fillRect(-12, -14, 24, 4); }, 56, 56),
     h('div', { class: 'store-body' },
       h('h3', {}, `Upgrade every pen: ${def.name}`),
       h('p', { class: 'small' }, next === 'spore_cradle' ? 'Unlocks Perks in offspring and incubates 10% faster.' : 'Incubates 25% faster and breeding costs 2 Glimmer less.'),

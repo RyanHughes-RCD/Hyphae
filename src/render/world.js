@@ -100,6 +100,57 @@ const C = {
   stone: '#9a9aa4', stoneL: '#c4c4cc', stoneD: '#686870', berry: '#d23a5a', cream: '#efe2c4', red: '#c8402e', water: '#5a9ad0',
 };
 
+/** A filled pixel ellipse. */
+function ell(ctx, c, cx, cy, rx, ry, yMin = -1e9, yMax = 1e9) {
+  ctx.fillStyle = c;
+  for (let yy = Math.floor(cy - ry); yy <= Math.ceil(cy + ry); yy++) {
+    if (yy < yMin || yy > yMax) continue;
+    const d = 1 - ((yy + 0.5 - cy) / ry) ** 2;
+    if (d < 0) continue;
+    const w = rx * Math.sqrt(d);
+    const x0 = Math.round(cx - w);
+    const x1 = Math.round(cx + w);
+    if (x1 > x0) ctx.fillRect(x0, yy, x1 - x0, 1);
+  }
+}
+
+function mushroomHouse(ctx, x, y, o) {
+  r(ctx, 'rgba(0,0,0,0.18)', x + 6, y + 44, 36, 3);
+  // walls (a fat stem)
+  r(ctx, '#5a4632', x + 10, y + 24, 28, 21);
+  r(ctx, C.cream, x + 11, y + 24, 26, 20);
+  r(ctx, '#d8c6a0', x + 31, y + 24, 6, 20);
+  r(ctx, '#fff4dc', x + 12, y + 26, 2, 16);
+  r(ctx, '#c8b48c', x + 11, y + 42, 26, 2);
+  // round-topped door
+  r(ctx, '#3a2414', x + 20, y + 32, 8, 12); r(ctx, '#3a2414', x + 21, y + 31, 6, 1);
+  r(ctx, C.wood, x + 21, y + 33, 6, 11); r(ctx, C.woodL, x + 22, y + 32, 4, 1);
+  r(ctx, C.woodD, x + 24, y + 33, 1, 11); r(ctx, '#ffd75e', x + 26, y + 38, 1, 1);
+  r(ctx, C.stone, x + 19, y + 44, 10, 1);
+  // windows
+  for (const wx of [13, 31]) {
+    r(ctx, '#5a3a1e', x + wx - 1, y + 28, 6, 6); r(ctx, '#ffe9a0', x + wx, y + 29, 4, 4); r(ctx, '#fff8d8', x + wx, y + 29, 2, 2);
+    r(ctx, '#5a3a1e', x + wx + 2, y + 29, 1, 4); r(ctx, '#5a3a1e', x + wx, y + 31, 4, 1);
+  }
+  if (o.flowers) for (const wx of [12, 30]) { r(ctx, C.woodD, x + wx, y + 34, 6, 2); r(ctx, '#f08cc0', x + wx + 1, y + 33, 1, 1); r(ctx, '#f6e27a', x + wx + 3, y + 33, 1, 1); r(ctx, C.leafL, x + wx + 2, y + 33, 1, 1); r(ctx, '#f08cc0', x + wx + 4, y + 33, 1, 1); }
+  // the cap roof: outline, shade, body, light
+  ell(ctx, o.line, x + 24, y + 25, 24, 21, -1e9, y + 27);
+  ell(ctx, o.dark, x + 24, y + 25, 23, 20, -1e9, y + 26);
+  ell(ctx, o.roof, x + 23, y + 24, 21, 18, -1e9, y + 23);
+  ell(ctx, o.light, x + 17, y + 13, 8, 5);
+  r(ctx, o.dark, x + 2, y + 24, 44, 2);
+  r(ctx, o.line, x + 4, y + 26, 40, 1);
+  // spots
+  for (const [a, b, w, h] of [[10, 15, 4, 3], [21, 9, 5, 3], [32, 13, 4, 4], [15, 21, 3, 2], [38, 20, 3, 2], [27, 18, 3, 2]]) {
+    r(ctx, o.spots, x + a, y + b, w, h);
+    r(ctx, 'rgba(0,0,0,0.12)', x + a, y + b + h - 1, w, 1);
+  }
+  if (o.lantern) {
+    r(ctx, C.woodD, x + 39, y + 28, 1, 6); r(ctx, C.woodD, x + 38, y + 28, 4, 1);
+    r(ctx, '#3a2414', x + 40, y + 29, 3, 4); r(ctx, '#ffd75e', x + 41, y + 30, 1, 2);
+  }
+}
+
 const ART = {
   bed(ctx, x, y) {
     r(ctx, C.woodD, x + 1, y + 6, 14, 9); r(ctx, C.soil, x + 2, y + 7, 12, 7);
@@ -117,11 +168,30 @@ const ART = {
     r(ctx, '#b88ad8', x + 3, y + 6, 2, 2); r(ctx, '#b88ad8', x + 11, y + 5, 2, 2);
   },
   pen(ctx, x, y) {
-    // a little fenced breeding pen on soft grass
-    r(ctx, '#6aa640', x + 1, y + 5, 14, 10); r(ctx, '#86c25a', x + 2, y + 6, 12, 2);
-    r(ctx, C.woodL, x, y + 5, 16, 1); r(ctx, C.woodL, x, y + 10, 16, 1); r(ctx, C.woodD, x, y + 15, 16, 1);
-    for (const px of [0, 5, 10, 15]) { r(ctx, C.woodD, x + px, y + 3, 1, 13); r(ctx, C.woodL, x + px, y + 3, 1, 1); }
-    r(ctx, '#f08cb0', x + 7, y + 7, 1, 1); r(ctx, '#f08cb0', x + 9, y + 7, 1, 1); r(ctx, '#f08cb0', x + 7, y + 8, 3, 1); r(ctx, '#f08cb0', x + 8, y + 9, 1, 1);
+    // a 3×3 fenced paddock with a straw nest (48×48)
+    r(ctx, 'rgba(0,0,0,0.16)', x + 3, y + 44, 43, 3);
+    r(ctx, '#5f9a3e', x + 3, y + 13, 42, 32);
+    for (let i = 0; i < 40; i++) r(ctx, i % 3 ? '#76b24e' : '#4f8a34', x + 5 + ((i * 17) % 38), y + 15 + ((i * 11) % 28), i % 5 ? 1 : 2, 1);
+    // straw nest
+    ell(ctx, '#8a6a30', x + 24, y + 30, 10, 6);
+    ell(ctx, '#c9a456', x + 24, y + 29, 9, 5);
+    ell(ctx, '#e2c27a', x + 23, y + 28, 6, 3);
+    ell(ctx, '#7a5a26', x + 24, y + 30, 5, 2);
+    for (const [a, b] of [[17, 27], [30, 26], [20, 33], [29, 32], [24, 25]]) r(ctx, '#f4dc98', x + a, y + b, 2, 1);
+    // flowers in the corners
+    for (const [a, b, c] of [[7, 18, '#f08cc0'], [40, 19, '#f6e27a'], [8, 38, '#ffffff'], [39, 37, '#9ac8ff'], [11, 24, '#f6e27a']]) { r(ctx, C.leafD, x + a, y + b + 1, 1, 2); r(ctx, c, x + a - 1, y + b, 3, 1); r(ctx, c, x + a, y + b - 1, 1, 3); }
+    // fence: back, sides, front with a gate gap
+    const post = (px, py, h) => { r(ctx, C.woodD, x + px, y + py, 2, h); r(ctx, C.woodL, x + px, y + py, 2, 1); };
+    r(ctx, C.woodL, x + 2, y + 11, 44, 1); r(ctx, C.wood, x + 2, y + 12, 44, 1); r(ctx, C.woodL, x + 2, y + 15, 44, 1); r(ctx, C.wood, x + 2, y + 16, 44, 1);
+    for (const px of [2, 13, 23, 33, 44]) post(px, 8, 12);
+    r(ctx, C.woodL, x + 2, y + 12, 1, 32); r(ctx, C.woodD, x + 3, y + 12, 1, 32);
+    r(ctx, C.woodL, x + 45, y + 12, 1, 32); r(ctx, C.woodD, x + 46, y + 12, 1, 32);
+    for (const py of [22, 32]) { post(1, py, 8); post(44, py, 8); }
+    for (const [a, w] of [[2, 17], [29, 17]]) { r(ctx, C.woodL, x + a, y + 39, w, 1); r(ctx, C.wood, x + a, y + 40, w, 1); r(ctx, C.woodL, x + a, y + 43, w, 1); r(ctx, C.woodD, x + a, y + 44, w, 1); }
+    for (const px of [1, 10, 18, 29, 37, 45]) post(px, 36, 10);
+    // a little heart sign on the back fence
+    r(ctx, C.woodL, x + 20, y + 3, 9, 7); r(ctx, C.woodD, x + 20, y + 10, 9, 1); r(ctx, C.woodD, x + 24, y + 10, 1, 2);
+    r(ctx, '#f08cb0', x + 22, y + 5, 2, 1); r(ctx, '#f08cb0', x + 25, y + 5, 2, 1); r(ctx, '#f08cb0', x + 22, y + 6, 5, 1); r(ctx, '#f08cb0', x + 23, y + 7, 3, 1); r(ctx, '#f08cb0', x + 24, y + 8, 1, 1);
   },
   stump(ctx, x, y) {
     r(ctx, C.woodD, x + 3, y + 6, 10, 9); r(ctx, C.woodL, x + 3, y + 5, 10, 3); r(ctx, '#d9b07a', x + 5, y + 6, 6, 1);
@@ -174,12 +244,12 @@ const ART = {
     r(ctx, '#ff6a8a', x + 4, y + 3, 5, 4); r(ctx, '#fff0a0', x + 6, y + 3, 1, 4); r(ctx, '#9ff0e0', x + 10, y + 4, 3, 3);
   },
   home(ctx, x, y) {
-    r(ctx, C.cream, x + 4, y + 8, 8, 7); r(ctx, C.woodD, x + 7, y + 11, 2, 4); r(ctx, '#ffe9a0', x + 5, y + 9, 2, 2);
-    r(ctx, C.red, x + 1, y + 4, 14, 5); r(ctx, C.red, x + 3, y + 2, 10, 2); r(ctx, '#ffffff', x + 4, y + 4, 2, 1); r(ctx, '#ffffff', x + 10, y + 3, 2, 1);
+    // a 3×3 mushroom house: cream stem walls under a spotted red cap (48×48)
+    mushroomHouse(ctx, x, y, { roof: C.red, light: '#e2664e', dark: '#962a1e', line: '#4a1812', spots: '#fff6e8', windows: 2 });
   },
   cozyhome(ctx, x, y) {
-    r(ctx, C.cream, x + 2, y + 8, 12, 7); r(ctx, C.woodD, x + 7, y + 11, 2, 4); r(ctx, '#ffe9a0', x + 3, y + 9, 2, 2); r(ctx, '#ffe9a0', x + 11, y + 9, 2, 2);
-    r(ctx, '#7a5aa8', x, y + 4, 16, 5); r(ctx, '#7a5aa8', x + 2, y + 1, 12, 3); r(ctx, '#f6e27a', x + 4, y + 3, 2, 1); r(ctx, '#f6e27a', x + 10, y + 5, 2, 1);
+    // a bigger, cosier house with a starry violet cap
+    mushroomHouse(ctx, x, y, { roof: '#7a5aa8', light: '#9c7cc8', dark: '#55387e', line: '#2a1840', spots: '#f6e27a', windows: 2, lantern: true, flowers: true });
   },
   flowers(ctx, x, y) {
     for (const [a, b, c] of [[3, 6, '#f08cc0'], [8, 4, '#f6e27a'], [11, 9, '#9ac8ff'], [5, 11, '#ffffff'], [12, 3, '#f08cc0']]) { r(ctx, C.leaf, x + a, y + b + 1, 1, 3); r(ctx, c, x + a - 1, y + b, 3, 1); r(ctx, c, x + a, y + b - 1, 1, 3); }
@@ -258,15 +328,17 @@ const ART = {
 };
 
 /** Draw edited art anchored to the bottom-centre of its tile (taller sprites rise above it). */
-function drawOverride(ctx, ov, x, y) {
-  ctx.drawImage(ov, x + Math.round((TILE - ov.width) / 2), y + TILE - ov.height);
+function drawOverride(ctx, ov, x, y, span = TILE) {
+  ctx.drawImage(ov, x + Math.round((span - ov.width) / 2), y + span - ov.height);
 }
 
+/** Draw a structure on its tile; a big one (def.size) is centred on that tile and covers size × size tiles. */
 export function drawStructure(ctx, def, tx, ty, state, t) {
-  const x = tx * TILE;
-  const y = ty * TILE;
+  const n = def.size || 1;
+  const x = (tx - (n - 1) / 2) * TILE;
+  const y = (ty - (n - 1) / 2) * TILE;
   const ov = overrideCanvas(def.overrideKey || 'structure:' + def.sprite);
-  const fn = ov ? (c, xx, yy) => drawOverride(c, ov, xx, yy) : ART[def.sprite] || ART.stones;
+  const fn = ov ? (c, xx, yy) => drawOverride(c, ov, xx, yy, n * TILE) : ART[def.sprite] || ART.stones;
   if (state === 'ruin') {
     ctx.globalAlpha = 0.45;
     fn(ctx, x, y, 0);

@@ -284,7 +284,7 @@ export class App {
     const now = this.now();
     if (tool.kind === 'clear') {
       const area = this.state.world.areas[areaId];
-      const o = area.objects.find((q) => q.x === x && q.y === y);
+      const o = G.objectAt(area, x, y);
       if (o && STRUCTURES[o.def].kind === 'clutter') this.act(() => G.clearClutter(this.state, o.id), (r) => `Cleared! ${gainText(r.gained)}`);
       else if (area.tiles[y][x] === 'u') this.act(() => G.clearThicket(this.state, areaId, x, y), (r) => `Thicket cut back. ${gainText(r.gained)}`);
       return;
@@ -295,7 +295,7 @@ export class App {
       this.act(() => G.paintTerrain(this.state, areaId, x, y, tool.code));
     } else if (tool.kind === 'move') {
       if (!tool.objectId) {
-        const o = this.state.world.areas[areaId].objects.find((q) => q.x === x && q.y === y);
+        const o = G.objectAt(this.state.world.areas[areaId], x, y);
         if (!o) return;
         if (STRUCTURES[o.def].kind === 'clutter') { this.toast('Clear clutter instead of moving it.', 'error'); return; }
         this.buildTool = { kind: 'move', objectId: o.id };
@@ -305,7 +305,7 @@ export class App {
         if (res.ok) { this.buildTool = { kind: 'move', objectId: null }; this.render(); }
       }
     } else if (tool.kind === 'remove') {
-      const o = this.state.world.areas[areaId].objects.find((q) => q.x === x && q.y === y);
+      const o = G.objectAt(this.state.world.areas[areaId], x, y);
       if (!o) return;
       this.confirm('Remove?', `Remove this ${STRUCTURES[o.def].name}? Materials are not refunded.`, 'Remove', () => this.act(() => G.removeObject(this.state, o.id)), true);
     }

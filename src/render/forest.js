@@ -331,7 +331,7 @@ export class ForestView {
     }
     if (!inArea) return;
     const area = this.app.state.world.areas[t.areaId];
-    const obj = area.objects.find((o) => o.x === t.x && o.y === t.y);
+    const obj = this.app.game.objectAt(area, t.x, t.y);
     if (obj) this.app.onTapObject(obj.id);
     else if (area.tiles[t.y][t.x] === 'u') this.app.onTapThicket(t.areaId, t.x, t.y);
   }
@@ -358,7 +358,9 @@ export class ForestView {
     const o = this.areaOrigin(found.areaId);
     const siblings = this.app.state.mushrooms.filter((x) => x.work?.structureId === obj.id);
     const k = siblings.indexOf(m);
-    const offsets = [[-3, 17], [19, 17], [8, 20]];
+    // around the front of the structure (big ones are centred on their tile)
+    const half = ((STRUCTURES[obj.def].size || 1) - 1) / 2 * TILE;
+    const offsets = [[-3 - half, 17 + half], [19 + half, 17 + half], [8, 20 + half]];
     const [ox, oy] = offsets[k % offsets.length];
     return { x: o.x + clamp(obj.x * TILE + ox, EDGE, LW - EDGE), y: o.y + clamp(obj.y * TILE + oy, SPRITE_H, LH - 4) };
   }
@@ -571,7 +573,8 @@ export class ForestView {
       for (const o of a.area.objects) {
         if (!inView(a.ox + o.x * TILE, a.oy + o.y * TILE)) continue;
         const rec = clusterOn.get(o.id);
-        items.push({ y: a.oy + o.y * TILE + TILE, draw: () => {
+        const half = ((STRUCTURES[o.def].size || 1) - 1) / 2;
+        items.push({ y: a.oy + (o.y + half) * TILE + TILE, draw: () => {
           ctx.save(); ctx.translate(a.ox, a.oy); drawStructure(ctx, STRUCTURES[o.def], o.x, o.y, o.state, rm ? 0 : t); ctx.restore();
           if (rec) drawCluster(ctx, a.ox + o.x * TILE + 8, a.oy + o.y * TILE + 9, rec.completesAt <= this.app.now(), t, rm);
         } });
@@ -602,12 +605,22 @@ export class ForestView {
         if (ht) {
           const o = this.areaOrigin(ht.areaId);
           ctx.strokeStyle = '#ffd75e';
-          ctx.strokeRect(o.x + ht.x * TILE, o.y + ht.y * TILE, TILE, TILE);
+          // show the whole footprint of what is being placed or moved
+          const tool = this.app.buildTool;
+          const def = tool.kind === 'place' ? tool.def : tool.kind === 'move' && tool.objectId ? this.app.game.objectById(s, tool.objectId)?.obj.def : null;
+          const n = (def && STRUCTURES[def]?.size) || 1;
+          const hh = (n - 1) / 2;
+          ctx.strokeRect(o.x + (ht.x - hh) * TILE, o.y + (ht.y - hh) * TILE, TILE * n, TILE * n);
         }
       }
       if (this.app.buildTool.kind === 'move' && this.app.buildTool.objectId) {
         const f = this.app.game.objectById(s, this.app.buildTool.objectId);
-        if (f) { const o = this.areaOrigin(f.areaId); ctx.strokeStyle = '#8fd8ff'; ctx.strokeRect(o.x + f.obj.x * TILE, o.y + f.obj.y * TILE, TILE, TILE); }
+        if (f) {
+          const o = this.areaOrigin(f.areaId);
+          const n = STRUCTURES[f.obj.def].size || 1;
+          const hh = (n - 1) / 2;
+          ctx.strokeStyle = '#8fd8ff'; ctx.strokeRect(o.x + (f.obj.x - hh) * TILE, o.y + (f.obj.y - hh) * TILE, TILE * n, TILE * n);
+        }
       }
     }
 

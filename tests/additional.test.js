@@ -7,7 +7,7 @@ import { baseStats, statSum, colorGroupPoints, computeStats } from '../src/core/
 import { generateStarters, resolveBreeding, newMushroom, hiddenColor } from '../src/core/genetics.js';
 import { phaseAt, conditionsAt, weatherForDate } from '../src/core/time.js';
 import * as G from '../src/core/game.js';
-import { JOB_BY_ID } from '../src/content/world.js';
+import { JOB_BY_ID, STRUCTURES } from '../src/content/world.js';
 import { exportMushroom, importGuest, shareRecord } from '../src/core/share.js';
 import { serialize, parseSave } from '../src/core/save.js';
 import { hash } from '../src/core/rng.js';
@@ -611,4 +611,27 @@ test('schema 4 saves: mushrooms get a real second colour and a drab stem', () =>
   }
   // stable: the same mushroom always gets the same colours
   assert.deepEqual(parseSave(JSON.stringify(old)).mushrooms.map((m) => m.genes.accent), migrated.mushrooms.map((m) => m.genes.accent));
+});
+
+test('Breeding Pens and Mushroom Homes cover 3×3 tiles', () => {
+  const s = G.newGame({ now: NOW, seed: 'big', tzOffset: 0 });
+  s.inventory.twigs = 100; s.inventory.leaves = 100;
+  const area = s.world.areas.clearing;
+  // find a clear, reachable 3×3 spot
+  let spot = null;
+  for (let y = 1; y < 8 && !spot; y++) for (let x = 1; x < 9 && !spot; x++) {
+    const ok = G.footprintAt('breeding_pen', x, y).every(([fx, fy]) => G.tileFree(s, 'clearing', fx, fy) && !['u', 'w', 'r'].includes(area.tiles[fy]?.[fx]) && G.isReachable(s, 'clearing', fx, fy));
+    if (ok) spot = [x, y];
+  }
+  assert.ok(spot, 'a 3×3 spot exists');
+  const [x, y] = spot;
+  assert.ok(G.buildStructure(s, 'breeding_pen', 'clearing', x, y, NOW).ok);
+  const pen = area.objects.at(-1);
+  for (const [fx, fy] of G.footprintAt('breeding_pen', x, y)) assert.equal(G.objectAt(area, fx, fy)?.id, pen.id);
+  // nothing else can go on any of its tiles, and a second pen cannot overlap it
+  assert.equal(G.tileFree(s, 'clearing', x + 1, y + 1), false);
+  assert.equal(G.buildStructure(s, 'breeding_pen', 'clearing', x + 2, y, NOW).ok, false);
+  // a big structure cannot hang off the edge of the clearing
+  assert.equal(G.buildStructure(s, 'breeding_pen', 'clearing', 0, 4, NOW).ok, false);
+  assert.equal(STRUCTURES.mushroom_home.size, 3);
 });

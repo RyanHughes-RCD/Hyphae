@@ -5,7 +5,7 @@ import { CATEGORIES } from '../content/attributes.js';
 import { PERK_BY_ID, MUTATION_BY_ID } from '../content/genetics.js';
 import {
   JOBS, JOB_BY_ID, STRUCTURES, STAGES, STAGE_BY_ID, STAGE_IDS, PROJECTS, BREEDING_STATIONS,
-  RESOURCE_IDS, TERRAIN, AREA_W, AREA_H, PAINTABLE_TERRAIN, TERRAIN_PAINT_COST, GLADE_THEME, THICKET_CLEAR,
+  RESOURCE_IDS, TERRAIN, AREA_W, AREA_H, PAINTABLE_TERRAIN, TERRAIN_PAINT_COST, GLADE_THEME, THICKET_CLEAR, sizeOf,
 } from '../content/world.js';
 import { hash, hashHex, makeRng, freshSeed } from './rng.js';
 import { computeStats, colorFamily } from './stats.js';
@@ -296,7 +296,7 @@ function landSpots(area) {
   const out = [];
   for (let y = 1; y <= AREA_H - 2; y++) for (let x = 1; x <= AREA_W - 2; x++) {
     const t = area.tiles[y][x];
-    if (!TERRAIN[t]?.blocks && t !== 'p' && !area.objects.some((o) => o.x === x && o.y === y)) out.push({ x, y });
+    if (!TERRAIN[t]?.blocks && t !== 'p' && !objectAt(area, x, y)) out.push({ x, y });
   }
   return out;
 }
@@ -486,8 +486,7 @@ export function isReachable(state, areaId, x, y) {
 export function objectReachable(state, objectId) {
   const f = objectById(state, objectId);
   if (!f) return false;
-  const { x, y } = f.obj;
-  return [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => isReachable(state, f.areaId, x + dx, y + dy));
+  return footprint(f.obj).some(([x, y]) => [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => isReachable(state, f.areaId, x + dx, y + dy)));
 }
 
 function stopUnreachableWork(state) {
@@ -596,10 +595,26 @@ export function restoreStructure(state, objectId, now) {
   return ok();
 }
 
+/** The tiles a structure covers (big ones are centred on their own tile). */
+export function footprintAt(defId, x, y) {
+  const n = sizeOf(defId);
+  const h = (n - 1) / 2;
+  const out = [];
+  for (let dy = -h; dy <= h; dy++) for (let dx = -h; dx <= h; dx++) out.push([x + dx, y + dy]);
+  return out;
+}
+export const footprint = (o) => footprintAt(o.def, o.x, o.y);
+const covers = (o, x, y) => { const h = (sizeOf(o.def) - 1) / 2; return Math.abs(o.x - x) <= h && Math.abs(o.y - y) <= h; };
+
+/** The object standing on a tile, if any. */
+export function objectAt(area, x, y, ignoreId = null) {
+  return area?.objects.find((o) => o.id !== ignoreId && covers(o, x, y)) || null;
+}
+
 export function tileFree(state, areaId, x, y, ignoreId = null) {
   const area = state.world.areas[areaId];
   if (!area || x < 0 || y < 0 || x >= AREA_W || y >= AREA_H) return false;
-  return !area.objects.some((o) => o.x === x && o.y === y && o.id !== ignoreId);
+  return !objectAt(area, x, y, ignoreId);
 }
 
 export function buildable(state, defId) {
@@ -617,6 +632,19 @@ export function buildable(state, defId) {
 /** Why a structure cannot stand on a tile (null = it can). */
 function placementProblem(state, areaId, x, y, defId, ignoreId = null) {
   const def = STRUCTURES[defId];
+  if (sizeOf(defId) > 1) {
+    // a big structure needs every tile under it to be clear, reachable land
+    const area = state.world.areas[areaId];
+    for (const [fx, fy] of footprintAt(defId, x, y)) {
+      const t = area?.tiles[fy]?.[fx];
+      if (!t) return `The ${def.name} covers 3×3 tiles — move it further from the edge.`;
+      if (!tileFree(state, areaId, fx, fy, ignoreId)) return `The ${def.name} covers 3×3 tiles and something is in the way.`;
+      if (t === 'u') return 'Clear the thicket under it first.';
+      if (TERRAIN[t]?.water) return 'Cannot build on water.';
+      if (!isReachable(state, areaId, fx, fy)) return 'Your mushrooms cannot reach that spot yet.';
+    }
+    return null;
+  }
   const tile = state.world.areas[areaId]?.tiles[y]?.[x];
   if (!tile || !tileFree(state, areaId, x, y, ignoreId)) return 'That spot is taken — clear it first.';
   if (tile === 'u') return 'Clear the thicket first.';
@@ -1185,12 +1213,13 @@ export function incubationSlots(state) {
 
 /** Dev / tests: put a Breeding Pen down for free in the starting clearing. */
 export function devGivePen(state) {
-  const area = state.world.areas.clearing;
-  for (let y = 1; y < AREA_H - 1; y++) for (let x = 1; x < AREA_W - 1; x++) {
-    if (tileFree(state, 'clearing', x, y) && !TERRAIN[area.tiles[y][x]]?.blocks && isReachable(state, 'clearing', x, y)) {
-      area.objects.push({ id: 'o' + state.nextObjectId++, def: 'breeding_pen', x, y, state: 'built', prefab: false });
-      bumpWorld(state);
-      return true;
+  for (const [areaId, area] of Object.entries(state.world.areas)) {
+    for (let y = 1; y < AREA_H - 1; y++) for (let x = 1; x < AREA_W - 1; x++) {
+      if (!placementProblem(state, areaId, x, y, 'breeding_pen')) {
+        area.objects.push({ id: 'o' + state.nextObjectId++, def: 'breeding_pen', x, y, state: 'built', prefab: false });
+        bumpWorld(state);
+        return true;
+      }
     }
   }
   return false;
