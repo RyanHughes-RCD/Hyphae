@@ -25,7 +25,7 @@
 | 0.6 | Nov 2026 | Colour genetics redone (D-18): two colour genes per mushroom (one may be hidden and resurface in offspring), colour sports to neighbouring shades, and larger heritable colour shifts. Save schema 3. |
 | 0.7 | Nov 2026 | Auto-jobs (D-19): mushrooms take the job that suits them best, overflow to their next best, and are swapped off when a better-suited mushroom arrives; player pins and breaks still work. |
 | 0.8 | Nov 2026 | Breeding Pens are buildings you buy and place (D-20): one incubation per pen, up to 3; tapping a pen opens the breeding menu; Spore/Moonlit Cradle become pen upgrades. A Store screen (D-21) with Workstations, Housing, Breeding, Decor, Paths & Bridges and Ground tabs. Save schema 4 (old Breeding Nook → pen). |
-| 0.9 | Nov 2026 | Mushroom art overhaul (D-22): parts-based generator on a 30×36 frame with per-lobe shading, stems that set the cap's height, a real **second colour** for all patterns, drab stem palette. New growth forms that each lean into one kind of work — Tuftcap, Lumpcap, Tippedcap, Shaggy Inkcap; Lanky, Stubby and Warty stems; Beads, Shaggy scales and Glassy sheen markings; Inky drips. Save schema 5 (mushrooms get a second colour and a stem colour). Breeding Pens, Mushroom Homes and Cozy Homes now cover 3×3 tiles (D-23). Land tiles blend into each other with rounded, faded edges; shorelines stay crisp (D-24). |
+| 0.9 | Nov 2026 | Mushroom art overhaul (D-22): parts-based generator on a 30×36 frame with per-lobe shading, stems that set the cap's height, a real **second colour** for all patterns, drab stem palette. New growth forms that each lean into one kind of work — Tuftcap, Lumpcap, Tippedcap, Shaggy Inkcap; Lanky, Stubby and Warty stems; Beads, Shaggy scales and Glassy sheen markings; Inky drips. Save schema 5 (mushrooms get a second colour and a stem colour). Breeding Pens, Mushroom Homes and Cozy Homes now cover 3×3 tiles (D-23). Land tiles blend into each other with rounded, faded edges; shorelines stay crisp (D-24). Spiky stats (D-25): each attribute feeds one or two stats and budgets are 1.5× (base total 93). |
 
 ### 0.2 Conventions
 
@@ -428,23 +428,26 @@ configuration version).
 
 Each attribute **category** has a fixed point budget. Every Basic and
 Uncommon attribute in a category spends exactly that budget; every Rare
-attribute spends the budget + `rareTierBudgetBonus` (+2):
+attribute spends the budget + `rareTierBudgetBonus` (+3). Since v0.9
+(decision D-25) every attribute feeds **only one or two stats**, and the
+budgets are 1.5× the original ones, so mushrooms come out as spiky
+specialists rather than all-rounders:
 
 | Category | Budget | Rare budget | Notes |
 |---|---|---|---|
-| Cap shape | 18 | 20 | Largest single influence on silhouette and profile. |
-| Cap colour | 12 | — | Distributed by RGB (Section 7.4). Colour has no tier and is always exactly 12. |
-| Stem | 12 | 14 | |
-| Markings | 10 | 12 | "Plain" is a full attribute with its own distribution. |
-| Gills / underside | 8 | 10 | |
-| Ordinary glow | 6 | 8 | "None" is a full attribute with its own distribution. |
-| **Total base** | **66** | **up to 76** | 66 for any mushroom with no Rare attributes; +2 per Rare attribute. |
+| Cap shape | 27 | 30 | Largest single influence on silhouette and profile. |
+| Cap colour | 12 | — | Distributed by RGB (Section 7.4). Colour has no tier and is always exactly 12; it is the one source that spreads across several stats, so it was deliberately not scaled up. |
+| Stem | 18 | 21 | |
+| Markings | 15 | 18 | "Plain" is a full attribute with its own distribution. |
+| Gills / underside | 12 | 15 | |
+| Ordinary glow | 9 | 12 | "None" is a full attribute with its own distribution. |
+| **Total base** | **93** | **up to 108** | 93 for any mushroom with no Rare attributes; +3 per Rare attribute. |
 
 Consequences:
 
 - Mushrooms without Rare attributes differ only in the **shape** of
   their stat profile, never in total base power. Rare attributes add a
-  small amount (+2 each); real power growth comes from Advanced Traits
+  small amount (+3 each); real power growth comes from Advanced Traits
   and Mutations.
 - Adding a future attribute category means adding a new budget; existing
   mushrooms gain that category through migration with a defined default
@@ -462,76 +465,76 @@ All values are Config. Unlisted stats are 0.
 Tables are approved as the starting point (decision D-2); Rare rows
 include the +2 Rare bonus.
 
-**Cap shape (budget 18; Rare 20)**
+**Cap shape (budget 27; Rare 30)**
 
 | Attribute | Tier | CUL | MYC | FOR | CON | MAG | ANI | DIS | SOC |
 |---|---|---|---|---|---|---|---|---|---|
-| Roundcap | Basic | 5 | 3 | | 10 | | | | |
-| Flatcap | Basic | | | 8 | 4 | | | | 6 |
-| Bellcap | Basic | 8 | | | | 4 | 6 | | |
-| Wavycap | Basic | | 8 | 4 | | | | 6 | |
-| Conecap | Basic | | 4 | | | 8 | | 6 | |
-| Clustercap | Basic | 4 | 6 | | | | | | 8 |
-| Shelfcap | Uncommon | | | 6 | 8 | | 4 | | |
-| Frillcap | Uncommon | 6 | | | | | 4 | | 8 |
-| Lanterncap | Rare | | | | | 11 | 3 | | 6 |
-| Spirecap | Rare | | | | | 9 | | 11 | |
-| Tuftcap | Uncommon | | | 10 | | 8 | | | |
-| Lumpcap | Uncommon | 6 | 12 | | | | | | |
-| Tippedcap | Uncommon | | | | | | 10 | | 8 |
-| Shaggy Inkcap | Rare | | | | | 8 | | 12 | |
+| Roundcap | Basic | 9 |  |  | 18 |  |  |  |  |
+| Flatcap | Basic |  |  | 15 |  |  |  |  | 12 |
+| Bellcap | Basic | 15 |  |  |  |  | 12 |  |  |
+| Wavycap | Basic |  | 15 |  |  |  |  | 12 |  |
+| Conecap | Basic |  |  |  |  | 15 |  | 12 |  |
+| Clustercap | Basic |  | 12 |  |  |  |  |  | 15 |
+| Shelfcap | Uncommon |  |  | 12 | 15 |  |  |  |  |
+| Frillcap | Uncommon | 12 |  |  |  |  |  |  | 15 |
+| Lanterncap | Rare |  |  |  |  | 21 |  |  | 9 |
+| Spirecap | Rare |  |  |  |  | 18 |  | 12 |  |
+| Tuftcap | Uncommon |  |  | 15 |  | 12 |  |  |  |
+| Lumpcap | Uncommon | 9 | 18 |  |  |  |  |  |  |
+| Tippedcap | Uncommon |  |  |  |  |  | 15 |  | 12 |
+| Shaggy Inkcap | Rare |  |  |  |  | 9 |  | 21 |  |
 
-**Stem (budget 12; Rare 14)**
-
-| Attribute | Tier | CUL | MYC | FOR | CON | MAG | ANI | DIS | SOC |
-|---|---|---|---|---|---|---|---|---|---|
-| Sturdy | Basic | 2 | | 4 | 6 | | | | |
-| Slender | Basic | | | 6 | | 2 | | 4 | |
-| Bulbous | Basic | 2 | 6 | | | | 4 | | |
-| Rooted | Basic | 4 | 2 | | | | | 6 | |
-| Ringed | Uncommon | | | | 2 | | 4 | | 6 |
-| Twisted | Uncommon | | | | | 6 | | 2 | 4 |
-| Crystal-veined | Rare | | | | 6 | 8 | | | |
-| Lanky | Basic | | | 4 | | 2 | | 6 | |
-| Stubby | Basic | 4 | 6 | | 2 | | | | |
-| Warty | Uncommon | | | | | | 7 | | 5 |
-
-**Markings (budget 10; Rare 12)**
+**Stem (budget 18; Rare 21)**
 
 | Attribute | Tier | CUL | MYC | FOR | CON | MAG | ANI | DIS | SOC |
 |---|---|---|---|---|---|---|---|---|---|
-| Plain | Basic | 4 | | 3 | 3 | | | | |
-| Spots | Basic | | | 2 | | | 5 | | 3 |
-| Stripes | Basic | | | 2 | 5 | | | 3 | |
-| Speckles | Basic | 2 | 5 | | | | | 3 | |
-| Rings | Uncommon | | 3 | | | 5 | | | 2 |
-| Patches | Uncommon | 3 | | | | | 2 | | 5 |
-| Constellation | Rare | | | | | 7 | | 5 | |
-| Beads | Uncommon | 4 | 6 | | | | | | |
-| Shaggy scales | Uncommon | | | | 4 | | | 6 | |
-| Glassy sheen | Uncommon | | | 5 | | 5 | | | |
+| Sturdy | Basic |  |  | 6 | 12 |  |  |  |  |
+| Slender | Basic |  |  | 12 |  |  |  | 6 |  |
+| Bulbous | Basic |  | 12 |  |  |  | 6 |  |  |
+| Rooted | Basic | 6 |  |  |  |  |  | 12 |  |
+| Ringed | Uncommon |  |  |  |  |  | 6 |  | 12 |
+| Twisted | Uncommon |  |  |  |  | 12 |  |  | 6 |
+| Crystal-veined | Rare |  |  |  | 9 | 12 |  |  |  |
+| Lanky | Basic |  |  |  |  |  |  | 18 |  |
+| Stubby | Basic | 6 | 12 |  |  |  |  |  |  |
+| Warty | Uncommon |  |  |  |  |  | 12 |  | 6 |
 
-**Gills / underside (budget 8; Rare 10)**
-
-| Attribute | Tier | CUL | MYC | FOR | CON | MAG | ANI | DIS | SOC |
-|---|---|---|---|---|---|---|---|---|---|
-| Fine gills | Basic | 2 | 4 | | | | 2 | | |
-| Deep gills | Basic | | 5 | | | | | 3 | |
-| Pored | Basic | | | 4 | 4 | | | | |
-| Ridged | Uncommon | | | | 4 | 2 | | 2 | |
-| Toothed | Uncommon | | | 2 | | | | 4 | 2 |
-| Velvet | Rare | | | | | | 5 | | 5 |
-| Inky drips | Uncommon | | | | | 4 | | 4 | |
-
-**Ordinary glow (budget 6; Rare 8)** — distinct from Mutation glow effects.
+**Markings (budget 15; Rare 18)**
 
 | Attribute | Tier | CUL | MYC | FOR | CON | MAG | ANI | DIS | SOC |
 |---|---|---|---|---|---|---|---|---|---|
-| None | Basic | 2 | | 2 | 2 | | | | |
-| Faint | Basic | | | | | 3 | | | 3 |
-| Soft | Uncommon | | | | | 4 | 2 | | |
-| Pulse | Uncommon | | | | | 2 | | 4 | |
-| Radiant | Rare | | | | | 8 | | | |
+| Plain | Basic | 9 |  |  | 6 |  |  |  |  |
+| Spots | Basic |  |  |  |  |  | 15 |  |  |
+| Stripes | Basic |  |  |  | 9 |  |  | 6 |  |
+| Speckles | Basic |  | 15 |  |  |  |  |  |  |
+| Rings | Uncommon |  | 6 |  |  | 9 |  |  |  |
+| Patches | Uncommon | 6 |  |  |  |  |  |  | 9 |
+| Constellation | Rare |  |  |  |  | 12 |  | 6 |  |
+| Beads | Uncommon | 6 | 9 |  |  |  |  |  |  |
+| Shaggy scales | Uncommon |  |  |  |  |  |  | 15 |  |
+| Glassy sheen | Uncommon |  |  | 9 |  | 6 |  |  |  |
+
+**Gills / underside (budget 12; Rare 15)**
+
+| Attribute | Tier | CUL | MYC | FOR | CON | MAG | ANI | DIS | SOC |
+|---|---|---|---|---|---|---|---|---|---|
+| Fine gills | Basic | 4 | 8 |  |  |  |  |  |  |
+| Deep gills | Basic |  | 12 |  |  |  |  |  |  |
+| Pored | Basic |  |  | 6 | 6 |  |  |  |  |
+| Ridged | Uncommon |  |  |  | 12 |  |  |  |  |
+| Toothed | Uncommon |  |  | 4 |  |  |  | 8 |  |
+| Velvet | Rare |  |  |  |  |  | 9 |  | 6 |
+| Inky drips | Uncommon |  |  |  |  | 6 |  | 6 |  |
+
+**Ordinary glow (budget 9; Rare 12) — distinct from Mutation glow effects.**
+
+| Attribute | Tier | CUL | MYC | FOR | CON | MAG | ANI | DIS | SOC |
+|---|---|---|---|---|---|---|---|---|---|
+| No glow | Basic | 5 |  | 4 |  |  |  |  |  |
+| Faint | Basic |  |  |  |  | 4 |  |  | 5 |
+| Soft | Uncommon |  |  |  |  | 6 | 3 |  |  |
+| Pulse | Uncommon |  |  |  |  |  |  | 9 |  |
+| Radiant | Rare |  |  |  |  | 12 |  |  |  |
 
 The Basic pool (6 × 6 × 4 × 3 × 2 shapes/stems/markings/gills/glows,
 times colour) far exceeds the MVP requirement of 12 visual combinations.
@@ -672,28 +675,31 @@ CON 5.
 
 | Source | CUL | MYC | FOR | CON | MAG | ANI | DIS | SOC | Total |
 |---|---|---|---|---|---|---|---|---|---|
-| Roundcap | 5 | 3 | | 10 | | | | | 18 |
-| Sturdy | 2 | | 4 | 6 | | | | | 12 |
-| Spots | | | 2 | | | 5 | | 3 | 10 |
-| Pored | | | 4 | 4 | | | | | 8 |
-| No glow | 2 | | 2 | 2 | | | | | 6 |
-| Amber | 5 | 2 | | 5 | | | | | 12 |
-| **Base** | **14** | **5** | **12** | **27** | **0** | **5** | **0** | **3** | **66** |
+| Roundcap | 9 |  |  | 18 |  |  |  |  | 27 |
+| Sturdy |  |  | 6 | 12 |  |  |  |  | 18 |
+| Spots |  |  |  |  |  | 15 |  |  | 15 |
+| Pored |  |  | 6 | 6 |  |  |  |  | 12 |
+| No glow | 5 |  | 4 |  |  |  |  |  | 9 |
+| Amber | 5 | 2 |  | 5 |  |  |  |  | 12 |
+| **Base** | **19** | **2** | **16** | **41** | **0** | **15** | **0** | **0** | **93** |
 
 Bramble is a Hearth (Construction) mushroom. Two inherited Construction
-traits (+8) would raise Construction to 35.
+traits (+8) would raise Construction to 49.
 
 ### 7.7 Balance envelope
 
 With the initial tables:
 
-- Ordinary mushrooms: base total 66 (up to 76 with five Rare
-  attributes); typical single stats 0–28; the theoretical maximum single
-  base stat is roughly 40 (about 45 with Rare attributes).
+- Ordinary mushrooms: base total 93 (up to 108 with five Rare
+  attributes); profiles are spiky — typically one or two stats in the
+  25–45 range and several at or near 0. The theoretical maximum single
+  base stat is 66 from Basic attributes and 83 with Uncommon and Rare
+  ones (for example a Shaggy Inkcap, Lanky, Shaggy scales, Toothed,
+  Pulse line in Local Discovery).
 - Advanced Traits: up to 8 × 4 = +32.
 - Mutation: up to +18 on one stat.
-- A deeply line-bred specialist can therefore approach 90+ in one stat,
-  while remaining weak elsewhere.
+- A deeply line-bred specialist can therefore reach the 100 cap in one
+  stat, while remaining weak elsewhere; surplus is recorded as overflow.
 
 This makes the 100 cap meaningful only at the extreme end and makes
 specialization, not universal power, the outcome of long-term breeding.
@@ -2050,6 +2056,7 @@ feel of breeding and visible forest life before adding more content.
 | D-13 | Affinity | Derived from highest final stat, 8 names. Approved. |
 | D-14 | Breeding cost | One free breeding, then Glimmer (soft currency). |
 | D-15 | Development stage order | Strictly linear, in the order listed. |
+| D-25 | Spiky stats | Every attribute feeds one or two stats; category budgets ×1.5 (27/18/15/12/9, Rare +3); colour stays at 12. |
 | D-24 | Ground blending | Neighbouring land types meet in rounded, wandering edges with a short stepped fade (also across clearings); water shorelines stay crisp. |
 | D-23 | Big buildings | Breeding Pens, Mushroom Homes and Cozy Homes cover 3×3 tiles, centred on the tile you tap. |
 | D-22 | Mushroom art | Parts-based 30×36 generator; second colour paints patterns; drab stems; focused growth forms map to distinct job families. |

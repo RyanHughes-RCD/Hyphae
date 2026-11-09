@@ -30,7 +30,7 @@ function attributesTab(app) {
   const total = ATTRIBUTES.length;
   const found = ATTRIBUTES.filter((a) => d[a.id]).length;
   return h('div', {},
-    h('p', {}, `Every ordinary attribute always adds the same stats. Each category has a fixed budget (cap 18, stem 12, markings 10, gills 8, glow 6); Rare attributes get +${getConfig().stats.rareTierBudgetBonus}. Discovered ${found}/${total}.`),
+    h('p', {}, `Every ordinary attribute always adds the same stats. Each one feeds just one or two stats, and each category has a fixed budget (${Object.entries(getConfig().stats.categoryBudgets).map(([k, v]) => `${k} ${v}`).join(', ')}); Rare attributes get +${getConfig().stats.rareTierBudgetBonus}. Discovered ${found}/${total}.`),
     CATEGORIES.map((cat) => section(CATEGORY_NAMES[cat], ATTRIBUTES.filter((a) => a.category === cat).map((a) => h('div', { class: 'attr-row' + (d[a.id] ? '' : ' unknown') },
       h('span', { class: 'attr-name' }, d[a.id] ? a.name : '???', ' ', h('span', { class: `tier tier-${a.tier}` }, a.tier)),
       h('span', { class: 'small' }, d[a.id] ? statText(a.stats) : a.hint))))));

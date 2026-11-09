@@ -34,10 +34,10 @@ test('attribute rows sum to their category budget (+2 for Rare)', () => {
   }
 });
 
-test('base total is 66 without Rare attributes and +2 per Rare attribute', () => {
-  for (const m of generateStarters('x')) assert.equal(statSum(baseStats(m.genes)), 66);
+test('base total is 93 without Rare attributes and +3 per Rare attribute', () => {
+  for (const m of generateStarters('x')) assert.equal(statSum(baseStats(m.genes)), 93);
   const rare = mk('r', { cap: 'spirecap', stem: 'crystal' });
-  assert.equal(statSum(baseStats(rare.genes)), 70);
+  assert.equal(statSum(baseStats(rare.genes)), 99);
 });
 
 test('largest-remainder rounding: Amber is 7/5/0', () => {
@@ -634,4 +634,8 @@ test('Breeding Pens and Mushroom Homes cover 3×3 tiles', () => {
   // a big structure cannot hang off the edge of the clearing
   assert.equal(G.buildStructure(s, 'breeding_pen', 'clearing', 0, 4, NOW).ok, false);
   assert.equal(STRUCTURES.mushroom_home.size, 3);
+});
+
+test('every attribute feeds one or two stats', () => {
+  for (const a of ATTRIBUTES) assert.ok(Object.keys(a.stats).length <= 2, a.id);
 });

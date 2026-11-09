@@ -20,15 +20,15 @@ const DEFAULT_CONFIG = {
 
   stats: {
     statCap: 100,
-    categoryBudgets: { cap: 18, stem: 12, markings: 10, gills: 8, glow: 6 },
-    rareTierBudgetBonus: 2,
+    categoryBudgets: { cap: 27, stem: 18, markings: 15, gills: 12, glow: 9 },
+    rareTierBudgetBonus: 3,
     colorBudget: 12,
     colorZeroFallback: [1, 1, 1],
   },
 
   starters: {
     starterCount: 3,
-    starterMaxStat: 28,
+    starterMaxStat: 45,
     starterMaxAttempts: 500,
     starterColorJitter: 10,
   },
