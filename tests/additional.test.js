@@ -639,3 +639,44 @@ test('Breeding Pens and Mushroom Homes cover 3×3 tiles', () => {
 test('every attribute feeds one or two stats', () => {
   for (const a of ATTRIBUTES) assert.ok(Object.keys(a.stats).length <= 2, a.id);
 });
+
+test('the clean-up crew clears debris, pauses jobs, then goes back to work', () => {
+  const s = G.newGame({ now: NOW, seed: 'crew', tzOffset: 0 });
+  const area = s.world.areas.clearing;
+  // scatter some clutter on reachable land
+  let placed = 0;
+  for (let y = 1; y < 8 && placed < 3; y++) for (let x = 1; x < 9 && placed < 3; x++) {
+    if (G.tileFree(s, 'clearing', x, y) && G.isReachable(s, 'clearing', x, y)) { area.objects.push({ id: 'oC' + placed, def: 'weeds', x, y, state: 'built', prefab: false }); placed++; }
+  }
+  const jobsBefore = s.mushrooms.map((m) => m.work?.jobId);
+  const leaves = s.inventory.leaves || 0;
+  const r = G.startCleanup(s, NOW);
+  assert.ok(r.ok, r.reason);
+  assert.ok(G.onCleanup(s, s.mushrooms[0].uid));
+  assert.equal(G.startCleanup(s, NOW).ok, false);
+  // half-way: some cleared, no job output while out
+  const cycles = s.mushrooms.map((m) => m.work?.cycles ?? 0);
+  G.advance(s, NOW + (s.cleanup.endsAt - NOW) / 2);
+  assert.deepEqual(s.mushrooms.map((m) => m.work?.cycles ?? 0), cycles);
+  // done: all the weeds are gone, loot collected, everyone back at the same job
+  const end = s.cleanup.endsAt;
+  G.advance(s, end + 1000);
+  assert.equal(s.cleanup, null);
+  assert.equal(area.objects.filter((o) => o.id.startsWith('oC')).length, 0);
+  assert.ok((s.inventory.leaves || 0) >= leaves + 3);
+  assert.deepEqual(s.mushrooms.map((m) => m.work?.jobId), jobsBefore);
+  // and the trip survives a save and load
+  G.startCleanup(s, end + 2000);
+  const again = parseSave(serialize(s));
+  assert.ok(!s.cleanup || again.cleanup.jobs.length === s.cleanup.jobs.length);
+});
+
+test('a ruin is ready to restore once it is reachable and affordable', () => {
+  const s = G.newGame({ now: NOW, seed: 'ready', tzOffset: 0 });
+  const ruin = G.allObjects(s).find((o) => o.state === 'ruin');
+  if (!ruin) return;
+  for (const k of Object.keys(s.inventory)) s.inventory[k] = 0;
+  assert.equal(G.readyToRestore(s, ruin), false);
+  for (const k of Object.keys(s.inventory)) s.inventory[k] = 999;
+  assert.equal(G.readyToRestore(s, ruin), G.objectReachable(s, ruin.id));
+});

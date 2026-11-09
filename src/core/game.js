@@ -4,7 +4,7 @@ import { getConfig, STATS } from '../config.js';
 import { CATEGORIES } from '../content/attributes.js';
 import { PERK_BY_ID, MUTATION_BY_ID } from '../content/genetics.js';
 import {
-  JOBS, JOB_BY_ID, STRUCTURES, STAGES, STAGE_BY_ID, STAGE_IDS, PROJECTS, BREEDING_STATIONS,
+  JOBS, JOB_BY_ID, STRUCTURES, RESOURCES, STAGES, STAGE_BY_ID, STAGE_IDS, PROJECTS, BREEDING_STATIONS,
   RESOURCE_IDS, TERRAIN, AREA_W, AREA_H, PAINTABLE_TERRAIN, TERRAIN_PAINT_COST, GLADE_THEME, THICKET_CLEAR, sizeOf,
 } from '../content/world.js';
 import { hash, hashHex, makeRng, freshSeed } from './rng.js';
@@ -49,6 +49,7 @@ export function newGame({ now = Date.now(), seed = freshSeed(), forestName = 'My
     discoveries: { moonstone: false, attributes: {}, colorFamilies: {}, perks: {}, mutations: {}, traitStats: {}, synergies: {}, jobs: {} },
     unlocks: { traits: false, perks: false, mutations: false },
     flags: { firstTraitGranted: false },
+    cleanup: null,
     trade: { dateKey: null, sold: {} },
     tutorials: {},
     importedShareIds: [],
@@ -529,6 +530,131 @@ export function clearThicket(state, areaId, x, y) {
   for (const [r, n] of Object.entries(THICKET_CLEAR)) state.inventory[r] = (state.inventory[r] || 0) + n;
   bumpWorld(state);
   return ok({ gained: THICKET_CLEAR });
+}
+
+// ---------------------------------------------------------------- the clean-up crew
+
+const CLEANUP_SECONDS = { clutter: 6, thicket: 5, heavy: 10 }; // work per target, for one mushroom
+const CLEANUP_WALK = 2; // seconds between targets
+const CLEANUP_MAX_TARGETS = 40;
+
+/**
+ * Everything a clean-up crew can clear now, nearest first: clutter on land
+ * your mushrooms can reach, and thicket growing from that land (clearing it
+ * opens the way to whatever lies behind, which is cleared in the same trip).
+ * Water still needs bridges.
+ */
+export function cleanupTargets(state, limit = CLEANUP_MAX_TARGETS) {
+  const reach = reachableTiles(state);
+  const clutterAt = new Map();
+  for (const [areaId, a] of Object.entries(state.world.areas)) {
+    for (const o of a.objects) {
+      const def = STRUCTURES[o.def];
+      if (def.kind !== 'clutter' || (def.needsStage && !stageComplete(state, def.needsStage))) continue;
+      clutterAt.set((a.cx * AREA_W + o.x) + ',' + (a.cy * AREA_H + o.y), { kind: 'clutter', id: o.id, areaId, x: o.x, y: o.y, heavy: !!def.needsStage });
+    }
+  }
+  const out = [];
+  const seen = new Set(reach);
+  const queue = [];
+  // start from home, so the nearest work comes first
+  const home = [...reach][0];
+  const order = [...reach].map((k) => k.split(',').map(Number));
+  const [hx, hy] = home ? home.split(',').map(Number) : [0, 0];
+  order.sort((p, q) => Math.hypot(p[0] - hx, p[1] - hy) - Math.hypot(q[0] - hx, q[1] - hy));
+  for (const p of order) queue.push(p);
+  while (queue.length && out.length < limit) {
+    const [x, y] = queue.shift();
+    const key = x + ',' + y;
+    if (clutterAt.has(key)) out.push(clutterAt.get(key));
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = x + dx;
+      const ny = y + dy;
+      const nk = nx + ',' + ny;
+      if (seen.has(nk)) continue;
+      const t = globalTile(state, nx, ny);
+      if (t === null || t === undefined) continue;
+      if (t === 'u') {
+        seen.add(nk);
+        const ac = areaAt(state, Math.floor(nx / AREA_W), Math.floor(ny / AREA_H));
+        if (out.length < limit) out.push({ kind: 'thicket', areaId: ac.id, x: nx - ac.area.cx * AREA_W, y: ny - ac.area.cy * AREA_H });
+        queue.push([nx, ny]);
+      } else if (!TERRAIN[t]?.blocks) { seen.add(nk); queue.push([nx, ny]); }
+    }
+  }
+  return out.slice(0, limit);
+}
+
+/** Send every resident to clear debris; they go back to their jobs when it is done. */
+export function startCleanup(state, now) {
+  if (state.cleanup) return fail('Your mushrooms are already out clearing.');
+  const crew = residents(state).map((m) => m.uid);
+  if (!crew.length) return fail('You have no mushrooms to send.');
+  const targets = cleanupTargets(state);
+  if (!targets.length) return fail('There is nothing left that your mushrooms can clear right now.');
+  // share the work out: each target goes to whoever is free first
+  const free = new Map(crew.map((uid) => [uid, now + CLEANUP_WALK * 1000]));
+  const jobs = targets.map((t) => {
+    const uid = [...free.entries()].sort((p, q) => p[1] - q[1])[0][0];
+    const secs = t.heavy ? CLEANUP_SECONDS.heavy : CLEANUP_SECONDS[t.kind];
+    const at = free.get(uid) + secs * 1000;
+    free.set(uid, at + CLEANUP_WALK * 1000);
+    return { ...t, by: uid, at, done: false };
+  });
+  const endsAt = Math.max(...jobs.map((j) => j.at)) + CLEANUP_WALK * 1000;
+  state.cleanup = { startedAt: now, endsAt, crew, jobs, gained: {} };
+  event(state, 'cleanup', 'Clean-up crew sent out', `${crew.length} mushroom${crew.length === 1 ? '' : 's'} went to clear ${jobs.length} spots. They will go back to their jobs when they are done.`);
+  return ok({ targets: jobs.length, endsAt });
+}
+
+/** Clear whatever the crew has finished by `until`, and send them home when they are done. */
+function processCleanup(state, until) {
+  const c = state.cleanup;
+  if (!c) return;
+  const give = (loot) => { for (const [r, n] of Object.entries(loot)) { state.inventory[r] = (state.inventory[r] || 0) + n; c.gained[r] = (c.gained[r] || 0) + n; } };
+  let changed = false;
+  for (const j of c.jobs) {
+    if (j.done || j.at > until) continue;
+    j.done = true;
+    const area = state.world.areas[j.areaId];
+    if (!area) continue;
+    if (j.kind === 'clutter') {
+      const o = area.objects.find((q) => q.id === j.id);
+      if (!o) continue;
+      area.objects = area.objects.filter((q) => q.id !== j.id);
+      give(STRUCTURES[o.def].clear);
+    } else if (area.tiles[j.y]?.[j.x] === 'u') {
+      setTile(area, j.x, j.y, 'g');
+      give(THICKET_CLEAR);
+    }
+    changed = true;
+  }
+  if (changed) bumpWorld(state);
+  if (c.endsAt > until) return;
+  // home again: work resumes from now on (the time away earns nothing)
+  for (const m of state.mushrooms) if (c.crew.includes(m.uid) && m.work) { m.work.anchor = c.endsAt; m.work.cycles = 0; }
+  const got = Object.entries(c.gained).map(([r, n]) => `${n} ${RESOURCES[r]?.name || r}`).join(', ');
+  event(state, 'cleanup:done', 'Clean-up finished! Your mushrooms are back at work.', `Your mushrooms cleared ${c.jobs.length} spots and went back to work.${got ? ` You got ${got}.` : ''}`);
+  state.cleanup = null;
+  stopUnreachableWork(state);
+  checkStages(state);
+}
+
+/** Is this mushroom out with the clean-up crew right now? */
+export function onCleanup(state, uid) {
+  return !!state.cleanup?.crew.includes(uid);
+}
+
+/** The target a crew member is working on (or walking to) at `now`. */
+export function cleanupTask(state, uid, now) {
+  const c = state.cleanup;
+  if (!c || !c.crew.includes(uid)) return null;
+  return c.jobs.find((j) => j.by === uid && !j.done && j.at > now) || null;
+}
+
+/** A ruin your mushrooms can reach and you can afford: ready to restore. */
+export function readyToRestore(state, o) {
+  return o.state === 'ruin' && objectReachable(state, o.id) && canAfford(state, STRUCTURES[o.def].cost);
 }
 
 /** Announce (once) when the forest is ready to grow. */
@@ -1102,6 +1228,7 @@ export function resolveWork(state, until, report = newReport()) {
   const statCache = new Map();
   for (const m of state.mushrooms) {
     if (!m.work) continue;
+    if (state.cleanup?.crew.includes(m.uid)) continue; // out clearing debris
     const job = JOB_BY_ID[m.work.jobId];
     if (!job || !jobUnlocked(state, job.id)) { m.work = null; continue; }
     const d = cycleDuration(m, job, cfg);
@@ -1176,6 +1303,7 @@ export function advance(state, now) {
   const capMs = cfg.offline.offlineCapHours * HOUR;
   const limit = Math.min(now, state.lastSeenAt + capMs);
   report.elapsed = limit - state.lastSeenAt;
+  processCleanup(state, now);
   resolveWork(state, limit, report);
   if (now > limit) {
     // time beyond the cap is not granted; rebase cycle anchors

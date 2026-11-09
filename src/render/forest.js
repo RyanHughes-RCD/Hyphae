@@ -344,7 +344,8 @@ export class ForestView {
     for (const a of Object.values(s.world.areas)) for (const o of a.objects) objIds.add(o.id);
     for (const m of s.mushrooms) {
       if (m.status !== 'resident') continue;
-      if (m.work && objIds.has(m.work.structureId)) out.push({ m, kind: 'worker' });
+      if (this.app.game.onCleanup(s, m.uid)) out.push({ m, kind: 'crew' });
+      else if (m.work && objIds.has(m.work.structureId)) out.push({ m, kind: 'worker' });
       else if (!m.work) out.push({ m, kind: 'idle' });
     }
     for (const g of s.guests) out.push({ m: g, kind: 'guest' });
@@ -376,6 +377,17 @@ export class ForestView {
   }
 
   syncAgents() {
+    const cl = this.app.state.cleanup;
+    if (cl) {
+      this.cleanupSeen = this.cleanupSeen || new Set();
+      for (const j of cl.jobs) {
+        const k = cl.startedAt + ':' + j.kind + j.areaId + j.x + ',' + j.y;
+        if (!j.done || this.cleanupSeen.has(k)) continue;
+        this.cleanupSeen.add(k);
+        const o = this.areaOrigin(j.areaId);
+        if (o) this.popups.push({ x: o.x + j.x * TILE + 8, y: o.y + j.y * TILE + 2, color: j.kind === 'thicket' ? '#7cc25a' : '#c9a46a', life: 1.6 });
+      }
+    }
     const pop = this.population();
     const seen = new Set();
     for (const { m, kind } of pop) {
@@ -392,6 +404,17 @@ export class ForestView {
       }
       a.m = m;
       a.kind = kind;
+      if (kind === 'crew') {
+        // out with the clean-up crew: walk to the next spot and dig in
+        const task = this.app.game.cleanupTask(this.app.state, m.uid, this.app.now());
+        const o = task ? this.areaOrigin(task.areaId) : null;
+        const spot = task ? { x: o.x + task.x * TILE + 8 + (hash(m.uid) % 5) - 2, y: o.y + task.y * TILE + 14 } : null;
+        if (spot && a.mode !== 'walk') {
+          if (Math.hypot(spot.x - a.x, spot.y - a.y) > 2) this.walkTo(a, spot);
+          else { a.mode = 'work'; a.anim = 'dig'; }
+        } else if (!spot && a.mode === 'work') a.mode = 'idle';
+        continue;
+      }
       if (kind === 'worker') {
         const job = JOB_BY_ID[m.work.jobId];
         const spot = this.workSpot(m);
@@ -665,6 +688,7 @@ export class ForestView {
 
     // 3. depth-sorted: structures and mushrooms
     const items = [];
+    const arrows = [];
     // spore clusters growing in pens (one per pen, in pen order)
     const growing = this.app.game.activeBreedings(s);
     const penIds = this.app.game.pens(s).map((o) => o.id);
@@ -674,7 +698,10 @@ export class ForestView {
         if (!inView(a.ox + o.x * TILE, a.oy + o.y * TILE)) continue;
         const rec = clusterOn.get(o.id);
         const half = ((STRUCTURES[o.def].size || 1) - 1) / 2;
+        const ready = o.state === 'ruin' && this.app.game.readyToRestore(s, o);
+        if (ready) arrows.push({ x: a.ox + o.x * TILE + 8, y: a.oy + (o.y - half) * TILE });
         items.push({ y: a.oy + (o.y + half) * TILE + TILE, draw: () => {
+          if (ready) drawReadyGlow(ctx, a.ox + o.x * TILE + 8, a.oy + o.y * TILE + 12, t, rm);
           ctx.save(); ctx.translate(a.ox, a.oy); drawStructure(ctx, STRUCTURES[o.def], o.x, o.y, o.state, rm ? 0 : t); ctx.restore();
           if (rec) drawCluster(ctx, a.ox + o.x * TILE + 8, a.oy + o.y * TILE + 9, rec.completesAt <= this.app.now(), t, rm);
         } });
@@ -683,6 +710,8 @@ export class ForestView {
     for (const ag of this.agents.values()) if (inView(ag.x, ag.y)) items.push({ y: ag.y, draw: () => this.drawAgent(ctx, ag, t, rm) });
     items.sort((p, q) => p.y - q.y);
     for (const it of items) it.draw();
+    // ruins ready to restore: a bouncing yellow arrow, always on top
+    for (const ar of arrows) drawReadyArrow(ctx, ar.x, ar.y, t, rm);
 
     // 4. the edge of the map: dense undergrowth beyond, hedge walls along every open side
     this.drawBorders(ctx, view, areas);
@@ -936,6 +965,27 @@ function hashNoise(x, y, s) {
   let n = (x * 374761393 + y * 668265263 + s * 2147483647) | 0;
   n = (n ^ (n >>> 13)) * 1274126177;
   return ((n ^ (n >>> 16)) >>> 0) / 4294967296;
+}
+
+/** A soft pulsing glow on the ground under something ready to restore. */
+function drawReadyGlow(ctx, x, y, t, rm) {
+  const a = rm ? 0.32 : 0.22 + 0.14 * Math.sin(t * 3);
+  const g = ctx.createRadialGradient(x, y, 1, x, y, 14);
+  g.addColorStop(0, `rgba(255,215,94,${a})`);
+  g.addColorStop(1, 'rgba(255,215,94,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(x - 14, y - 14, 28, 28);
+}
+
+/** A chunky pixel arrow pointing down at (x, y), bobbing. */
+function drawReadyArrow(ctx, x, y, t, rm) {
+  const bob = rm ? 0 : Math.round(Math.sin(t * 4) * 2);
+  const top = y - 14 + bob;
+  const px = (dx, dy, w, h, c) => { ctx.fillStyle = c; ctx.fillRect(Math.round(x) + dx, top + dy, w, h); };
+  // outline, then fill, then a highlight
+  px(-3, -1, 6, 6, '#5a3a00'); px(-6, 4, 12, 2, '#5a3a00'); px(-5, 6, 10, 1, '#5a3a00'); px(-4, 7, 8, 1, '#5a3a00'); px(-3, 8, 6, 1, '#5a3a00'); px(-2, 9, 4, 1, '#5a3a00'); px(-1, 10, 2, 1, '#5a3a00');
+  px(-2, 0, 4, 5, '#ffd75e'); px(-5, 5, 10, 1, '#ffd75e'); px(-4, 6, 8, 1, '#ffd75e'); px(-3, 7, 6, 1, '#ffd75e'); px(-2, 8, 4, 1, '#ffd75e'); px(-1, 9, 2, 1, '#ffd75e');
+  px(-2, 0, 1, 5, '#fff4b0'); px(-4, 5, 2, 1, '#fff4b0');
 }
 
 function drawCluster(ctx, x, y, ready, t, rm) {

@@ -9,12 +9,19 @@ export function renderForest(app) {
   const tool = app.buildTool;
   const ruins = [];
   for (const [, area] of Object.entries(s.world.areas)) for (const o of area.objects) if (o.state === 'ruin') ruins.push(o);
-  const affordable = ruins.filter((o) => G.canAfford(s, STRUCTURES[o.def].cost)).length;
+  const affordable = ruins.filter((o) => G.readyToRestore(s, o)).length;
+  const crew = s.cleanup;
+  const toClear = crew ? 0 : G.cleanupTargets(s).length;
   const info = G.nextStageInfo(s);
   const ready = !!info?.ready;
 
   let pill = null;
-  if (!tool && info) {
+  if (!tool && crew) {
+    const done = crew.jobs.filter((j) => j.done).length;
+    pill = h('div', { class: 'fv-pill crew' }, `🧹 Clearing ${done}/${crew.jobs.length} · back to work in `, h('span', { dataset: { countdown: crew.endsAt, done: 'a moment' } }, fmtCountdown(crew.endsAt - app.now())));
+  } else if (!tool && affordable) {
+    pill = h('button', { type: 'button', class: 'fv-pill ready', onclick: () => focusReadyRuin(app) }, `✨ ${affordable === 1 ? 'Something is' : `${affordable} things are`} ready to restore — tap the yellow arrow`);
+  } else if (!tool && info) {
     if (ready) pill = h('button', { type: 'button', class: 'fv-pill ready', onclick: () => expandModal(app) }, '✨ The forest is ready to grow! Expand ▸');
     else if (info.prevDone && info.stage.discover.type === 'jobCycles') pill = h('button', { type: 'button', class: 'fv-pill', onclick: () => tasksModal(app) }, `Next discovery: ${info.progress}/${info.target}`);
   }
@@ -23,6 +30,7 @@ export function renderForest(app) {
   const bottom = tool ? buildBar(app) : h('div', { class: 'fv-actions' },
     actionBtn('🔨', 'Build', () => { app.buildTool = { kind: 'clear' }; app.render(); }),
     actionBtn('🧭', 'Expand', () => expandModal(app), ready ? 'glow' : ''),
+    actionBtn('🧹', crew ? 'Clearing…' : 'Clean up', () => cleanupModal(app), crew ? 'busy' : toClear ? '' : 'dim', crew ? 0 : toClear),
     actionBtn('📋', 'Tasks', () => tasksModal(app), '', affordable));
 
   app.forestOverlay.replaceChildren(top, bottom);
@@ -43,6 +51,47 @@ export function renderForest(app) {
     app.forest.focusArea(app.forest.centreArea(), true);
   }
   return app.canvasWrap;
+}
+
+const fmtCountdown = (ms) => { const sec = Math.max(0, Math.ceil(ms / 1000)); return sec >= 60 ? `${Math.floor(sec / 60)}m ${sec % 60}s` : `${sec}s`; };
+
+/** Move the camera to the first ruin that is ready to restore. */
+function focusReadyRuin(app) {
+  const s = app.state;
+  for (const [id, area] of Object.entries(s.world.areas)) {
+    const o = area.objects.find((q) => G.readyToRestore(s, q));
+    if (o) { app.forest.focusArea(id, true); return; }
+  }
+}
+
+/** Send everyone out to clear debris (or see how the trip is going). */
+export function cleanupModal(app) {
+  const s = app.state;
+  const c = s.cleanup;
+  if (c) {
+    const done = c.jobs.filter((j) => j.done).length;
+    app.modal(h('div', {},
+      h('p', {}, `Your mushrooms have cleared ${done} of ${c.jobs.length} spots.`),
+      h('p', { class: 'small' }, 'They go back to their usual jobs when they are done: ', h('span', { dataset: { countdown: c.endsAt, done: 'any moment now', prefix: 'in ' } }, 'in ' + fmtCountdown(c.endsAt - app.now())), '.'),
+      Object.keys(c.gained).length ? h('div', { class: 'small' }, 'Found so far: ', costView(s, c.gained, { plain: true })) : null), { title: '🧹 Clean-up crew' });
+    return;
+  }
+  const targets = G.cleanupTargets(s);
+  const clutter = targets.filter((t) => t.kind === 'clutter').length;
+  const thicket = targets.length - clutter;
+  const crew = G.residents(s).length;
+  if (!targets.length) {
+    app.modal(h('div', {}, h('p', {}, 'There is nothing your mushrooms can clear right now.'),
+      h('p', { class: 'small muted' }, 'Water needs a bridge before they can cross it, and boulders and old stumps need tools from the Workshop.')), { title: '🧹 Clean up' });
+    return;
+  }
+  const md = app.modal(h('div', {},
+    h('p', {}, `Send all ${crew} of your mushrooms to clear ${clutter ? `${clutter} piece${clutter === 1 ? '' : 's'} of debris` : ''}${clutter && thicket ? ' and ' : ''}${thicket ? `${thicket} patch${thicket === 1 ? '' : 'es'} of thicket` : ''}.`),
+    h('p', { class: 'small' }, 'They stop their jobs while they are out (no job output), keep what they find (twigs, leaves, stones and more), and go back to their usual jobs when they are done.'),
+    h('p', { class: 'small muted' }, 'You can still clear things one at a time yourself with Build → Clear.')), {
+    title: '🧹 Clean up',
+    footer: [h('button', { type: 'button', class: 'btn primary', onclick: () => { md.close(); app.act(() => G.startCleanup(s, app.now()), (r) => `Off they go — ${r.targets} spots to clear.`); } }, 'Send everyone')],
+  });
 }
 
 function actionBtn(icon, label, onclick, extra = '', badge = 0) {
@@ -121,7 +170,9 @@ function cleanupCard(app) {
   }
   if (!clutter && !thicket) return null;
   return section('Clean up', h('p', { class: 'small' }, `${clutter} pieces of clutter and ${thicket} thicket tiles are left to clear. Clearing gives you twigs, leaves, stones and more.`),
-    h('button', { type: 'button', class: 'btn', onclick: () => { app.closeAllModals(); app.buildTool = { kind: 'clear' }; app.render(); } }, '🧹 Start clearing'));
+    h('div', { class: 'row gap wrap' },
+      h('button', { type: 'button', class: 'btn primary', disabled: !!s.cleanup, onclick: () => { app.closeAllModals(); cleanupModal(app); } }, s.cleanup ? 'Crew is out clearing…' : '🧹 Send everyone'),
+      h('button', { type: 'button', class: 'btn', onclick: () => { app.closeAllModals(); app.buildTool = { kind: 'clear' }; app.render(); } }, 'Clear by hand')));
 }
 
 /** Tapped a thicket tile. */

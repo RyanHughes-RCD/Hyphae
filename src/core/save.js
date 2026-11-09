@@ -132,6 +132,10 @@ export function normalize(obj) {
   obj.importedShareIds = obj.importedShareIds || [];
   obj.wildVisitors = obj.wildVisitors || [];
   obj.flags = obj.flags || { firstTraitGranted: false };
+  // a clean-up trip in progress: keep it only if it is well formed
+  const c = obj.cleanup;
+  const okJob = (j) => j && ['clutter', 'thicket'].includes(j.kind) && typeof j.areaId === 'string' && Number.isInteger(j.x) && Number.isInteger(j.y) && Number.isFinite(j.at) && typeof j.by === 'string';
+  obj.cleanup = c && Array.isArray(c.crew) && Array.isArray(c.jobs) && c.jobs.every(okJob) && Number.isFinite(c.endsAt) ? { ...c, gained: c.gained || {} } : null;
   return obj;
 }
 

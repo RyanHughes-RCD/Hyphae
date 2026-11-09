@@ -203,7 +203,8 @@ export class App {
     const periodic = Math.floor(Date.now() / 1000) % 5 === 0;
     // screens holding something the player is in the middle of (a pasted share code, settings, dev tools) are not refreshed
     const holdsInput = this.screen === 'more' && ['share', 'settings', 'dev'].includes(this.ui.moreTab);
-    if (!busy && (breedingChanged || (periodic && !holdsInput && ['jobs', 'more', 'breed', 'store'].includes(this.screen)) || (report.cycles && this.screen === 'forest' && periodic))) this.render();
+    const crewOut = !!this.state.cleanup && this.screen === 'forest';
+    if (!busy && (breedingChanged || crewOut || (periodic && !holdsInput && ['jobs', 'more', 'breed', 'store'].includes(this.screen)) || (report.cycles && this.screen === 'forest' && periodic))) this.render();
     else if (periodic) this.renderHeader();
   }
 
