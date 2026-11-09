@@ -6,7 +6,7 @@ import { affinity, rarityScore } from '../../core/stats.js';
 import { drawMushroom, spriteCanvas, SPRITE_W, SPRITE_H } from '../../render/sprites.js';
 import { exportMushroom, removeGuest } from '../../core/share.js';
 import {
-  h, mushroomCard, statBars, attributeList, traitChip, perkChip, mutationChip, rarityBadge, temperamentText, section, empty, fmt, fmtDuration,
+  h, mushroomCard, statBars, statRadar, attributeList, traitChip, perkChip, mutationChip, rarityBadge, temperamentText, section, empty, fmt, fmtDuration,
 } from '../common.js';
 import { shareModal } from './more.js';
 
@@ -129,7 +129,7 @@ export function mushroomDetail(app, m) {
         h('p', { class: 'small' }, temperamentText(m)),
         workInfo,
         h('div', { class: 'row gap wrap' }, actions))),
-    section('Job stats', statBars(app, m)),
+    section('Job stats', statRadar(app, [{ m, label: m.name }]), statBars(app, m)),
     section('Ordinary attributes', attributeList(m)),
     section(`Advanced Traits (${m.traits.length}/8)`, m.traits.length ? h('div', { class: 'gene-list' }, m.traits.map((t) => traitChip(app, t))) : empty(s.unlocks.traits ? 'None yet. Offspring can develop permanent +4 stat bonuses.' : 'Unlocks after your second breeding.')),
     section(`Perks (${m.perks.length}/3)`, m.perks.length ? h('div', { class: 'gene-list' }, m.perks.map((p) => perkChip(app, p))) : empty(s.unlocks.perks ? 'No Perks yet.' : 'Unlocks with the Spore Cradle upgrade.')),

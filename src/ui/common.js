@@ -199,3 +199,76 @@ export function section(title, ...children) {
 export function empty(text) {
   return h('p', { class: 'empty' }, text);
 }
+
+// ---------------------------------------------------------------- stat radar (spider graph)
+
+/** Series colours for the radar (checked for contrast and colour-blind separation on the card surface). */
+export const RADAR_COLOURS = ['#c0821a', '#3f8fd6'];
+const RADAR_LABEL = { CUL: 'Cultivation', MYC: 'Mycology', FOR: 'Foraging', CON: 'Construction', MAG: 'Magic', ANI: 'Animal Care', DIS: 'Discovery', SOC: 'Social' };
+
+function svg(tag, attrs = {}, ...children) {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const [k, v] of Object.entries(attrs)) if (v !== null && v !== undefined && v !== false) el.setAttribute(k, v);
+  for (const c of children.flat(Infinity)) if (c) el.appendChild(c instanceof Node ? c : document.createTextNode(String(c)));
+  return el;
+}
+
+/**
+ * A spider graph of final job stats for one or two mushrooms on a shared
+ * scale. Hover or tap an axis for exact values. series: [{ m, label }]
+ */
+export function statRadar(app, series, opts = {}) {
+  // colour follows the slot (pen A is always amber, B always blue), not the number of mushrooms shown
+  const data = series.map((x, i) => (x && x.m ? { ...x, colour: RADAR_COLOURS[i], st: statsOf(app.state, x.m).final } : null)).filter(Boolean);
+  const n = STATS.length;
+  const top = Math.max(1, ...data.flatMap((d) => STATS.map((s) => d.st[s])));
+  const max = Math.min(100, Math.max(60, Math.ceil(top / 20) * 20));
+  const R = 84;
+  const ang = (i) => -Math.PI / 2 + (i * 2 * Math.PI) / n;
+  const pt = (i, v) => [Math.cos(ang(i)) * R * (v / max), Math.sin(ang(i)) * R * (v / max)];
+  const fmtPt = ([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`;
+
+  const grid = [];
+  for (let v = 20; v <= max; v += 20) {
+    grid.push(svg('polygon', { class: 'radar-ring' + (v === max ? ' outer' : ''), points: STATS.map((_, i) => fmtPt(pt(i, v))).join(' ') }));
+    grid.push(svg('text', { class: 'radar-tick', x: 5, y: (-R * v) / max + 3 }, String(v)));
+  }
+  const spokes = STATS.map((_, i) => svg('line', { class: 'radar-spoke', x1: 0, y1: 0, x2: pt(i, max)[0], y2: pt(i, max)[1] }));
+  const labels = STATS.map((s, i) => {
+    const [x, y] = pt(i, max * 1.17);
+    const c = Math.cos(ang(i));
+    return svg('text', { class: 'radar-label', 'data-stat': s, x: x.toFixed(1), y: (y + 4).toFixed(1), 'text-anchor': Math.abs(c) < 0.2 ? 'middle' : c > 0 ? 'start' : 'end' }, RADAR_LABEL[s]);
+  });
+  const shapes = data.map((d) => svg('g', { class: 'radar-series' },
+    svg('polygon', { points: STATS.map((s, i) => fmtPt(pt(i, d.st[s]))).join(' '), fill: d.colour, 'fill-opacity': data.length > 1 ? 0.18 : 0.28, stroke: d.colour, 'stroke-width': 2, 'stroke-linejoin': 'round' }),
+    STATS.map((s, i) => { const [x, y] = pt(i, d.st[s]); return svg('circle', { class: 'radar-dot', cx: x.toFixed(1), cy: y.toFixed(1), r: 4, fill: d.colour }); })));
+
+  // exact values: hover or tap anywhere in an axis's wedge
+  const readout = h('div', { class: 'radar-readout small', 'aria-live': 'polite' }, 'Hover or tap the chart for exact values.');
+  const focus = svg('line', { class: 'radar-focus', x1: 0, y1: 0, x2: 0, y2: 0 });
+  const show = (i) => {
+    const s = STATS[i];
+    const [x, y] = pt(i, max);
+    focus.setAttribute('x2', x.toFixed(1)); focus.setAttribute('y2', y.toFixed(1)); focus.classList.add('on');
+    for (const l of labels) l.classList.toggle('on', l.dataset.stat === s);
+    readout.replaceChildren(h('b', {}, STAT_NAMES[s] + ': '), ...data.map((d, k) => h('span', { class: 'radar-val' }, k ? ' · ' : '', data.length > 1 ? h('span', { class: 'radar-key', style: { background: d.colour } }) : null, data.length > 1 ? `${d.label} ` : '', h('b', {}, String(d.st[s])))));
+  };
+  const hits = STATS.map((_, i) => {
+    const a0 = ang(i) - Math.PI / n;
+    const a1 = ang(i) + Math.PI / n;
+    const r = R * 1.35;
+    const el = svg('path', { class: 'radar-hit', d: `M0,0 L${(Math.cos(a0) * r).toFixed(1)},${(Math.sin(a0) * r).toFixed(1)} A${r},${r} 0 0 1 ${(Math.cos(a1) * r).toFixed(1)},${(Math.sin(a1) * r).toFixed(1)} Z` });
+    el.addEventListener('pointerenter', () => show(i));
+    el.addEventListener('click', () => show(i));
+    return el;
+  });
+
+  const summary = data.map((d) => `${d.label || d.m.name}: ` + STATS.map((s) => `${STAT_NAMES[s]} ${d.st[s]}`).join(', ')).join('. ');
+  const chart = svg('svg', { class: 'radar', viewBox: '-178 -112 356 226', role: 'img', 'aria-label': `Stat spider graph. ${summary}` },
+    grid, spokes, shapes, focus, labels, hits);
+  chart.addEventListener('pointerleave', () => { focus.classList.remove('on'); for (const l of labels) l.classList.remove('on'); });
+  const legend = data.length > 1
+    ? h('div', { class: 'radar-legend small' }, data.map((d) => h('span', {}, h('span', { class: 'radar-key', style: { background: d.colour } }), d.label)))
+    : null;
+  return h('figure', { class: 'radar-wrap' + (opts.compact ? ' compact' : '') }, opts.title ? h('figcaption', { class: 'radar-title' }, opts.title) : null, legend, chart, readout);
+}

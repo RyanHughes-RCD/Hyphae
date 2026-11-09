@@ -8,7 +8,7 @@ import { drawMushroom, spriteCanvas, SPRITE_W, SPRITE_H } from '../../render/spr
 import { hex } from '../../core/color.js';
 import { hiddenColor } from '../../core/genetics.js';
 import { colorFamily } from '../../core/stats.js';
-import { h, costView, mushroomCard, mushroomThumb, section, fmtDuration, empty } from '../common.js';
+import { h, statRadar, costView, mushroomCard, mushroomThumb, section, fmtDuration, empty } from '../common.js';
 
 export function renderBreed(app) {
   const s = app.state;
@@ -50,6 +50,7 @@ export function renderBreed(app) {
     h('h2', { class: 'screen-title' }, 'Breeding'),
     section('Breeding pen',
       pen(app, a, b),
+      a || b ? statRadar(app, [a && { m: a, label: a.name }, b && { m: b, label: b.name }], { title: a && b ? 'Compare their stats' : 'Stats' }) : null,
       tray(app),
       a && b ? inheritanceHints(app, a, b) : h('p', { class: 'small' }, 'Drag two mushrooms into the pen (or tap them). Parents are never used up — they stay in your forest and keep working.'),
       h('div', { class: 'row gap' },
