@@ -320,7 +320,7 @@ textarea.code { font-family: "Pixeloid Mono", ui-monospace, monospace; font-size
 .tray { margin-top: 12px; }
 .tray-label { margin: 10px 0 6px; color: var(--muted); font-size: 13.5px; font-weight: 400; text-transform: uppercase; }
 .tray-row { display: flex; flex-wrap: wrap; gap: 6px; }
-.tray-chip { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; width: 84px; padding: 6px 4px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg2);
+.tray-chip { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; width: 92px; padding: 6px 4px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg2);
   touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; text-align: center; }
 .tray-chip:hover { border-color: var(--accent); }
 .tray-chip.dragging, .tray-chip.in-pen { opacity: 0.35; }
@@ -366,3 +366,6 @@ textarea.code { font-family: "Pixeloid Mono", ui-monospace, monospace; font-size
 .radar-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .radar-key { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -1px; margin-right: 4px; }
 .radar-legend .radar-key { margin-right: 0; }
+.mini-radar-wrap { display: flex; flex-direction: column; align-items: center; gap: 1px; width: 100%; pointer-events: none; }
+.mini-radar { width: 64px; height: 64px; overflow: visible; }
+.mini-radar-top { font-size: 9px; color: var(--muted); white-space: nowrap; }

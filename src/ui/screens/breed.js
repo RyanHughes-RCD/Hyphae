@@ -8,7 +8,7 @@ import { drawMushroom, spriteCanvas, SPRITE_W, SPRITE_H } from '../../render/spr
 import { hex } from '../../core/color.js';
 import { hiddenColor } from '../../core/genetics.js';
 import { colorFamily } from '../../core/stats.js';
-import { h, statRadar, costView, mushroomCard, mushroomThumb, section, fmtDuration, empty } from '../common.js';
+import { h, statRadar, miniRadar, costView, mushroomCard, mushroomThumb, section, fmtDuration, empty } from '../common.js';
 
 export function renderBreed(app) {
   const s = app.state;
@@ -198,7 +198,7 @@ function tray(app) {
       const reason = inPen ? null : G.breedIneligibility(s, m, app.now());
       const chip = h('div', { class: 'tray-chip' + (inPen ? ' in-pen' : '') + (reason ? ' ineligible' : ''), title: reason || `Drag ${m.name} into the pen`, role: 'button', tabindex: 0,
         onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); addToPen(app, m.uid); } } },
-      mushroomThumb(app, m, 2), h('span', { class: 'tray-name' }, m.name), reason ? h('span', { class: 'tray-why' }, reason) : null);
+      mushroomThumb(app, m, 2), h('span', { class: 'tray-name' }, m.name), miniRadar(app, m), reason ? h('span', { class: 'tray-why' }, reason) : null);
       if (inPen) return chip;
       if (reason) { chip.addEventListener('click', () => app.toast(`${m.name}: ${reason}`, 'error')); return chip; }
       draggable(chip, {

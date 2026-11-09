@@ -5,7 +5,7 @@ import { RESOURCES } from '../content/world.js';
 import { ATTRIBUTE_BY_ID, CATEGORY_NAMES, CATEGORIES, TEMPERAMENT_BY_ID, SECONDARY_PALETTE, STEM_PALETTE } from '../content/attributes.js';
 import { PERK_BY_ID, MUTATION_BY_ID, TRAIT_NAMES } from '../content/genetics.js';
 import { mushroomCanvas, resourceColor } from '../render/sprites.js';
-import { affinity, rarityTier, colorFamily, colorGroupPoints, colorContribution } from '../core/stats.js';
+import { affinity, rarityTier, colorFamily, colorGroupPoints, colorContribution, topStats } from '../core/stats.js';
 import { statsOf } from '../core/game.js';
 import { hiddenColor } from '../core/genetics.js';
 import { hex } from '../core/color.js';
@@ -271,4 +271,23 @@ export function statRadar(app, series, opts = {}) {
     ? h('div', { class: 'radar-legend small' }, data.map((d) => h('span', {}, h('span', { class: 'radar-key', style: { background: d.colour } }), d.label)))
     : null;
   return h('figure', { class: 'radar-wrap' + (opts.compact ? ' compact' : '') }, opts.title ? h('figcaption', { class: 'radar-title' }, opts.title) : null, legend, chart, readout);
+}
+
+/** A small spider graph for picking mushrooms: shape only, plus its two best stats underneath. */
+export function miniRadar(app, m) {
+  const st = statsOf(app.state, m).final;
+  const n = STATS.length;
+  const top = Math.max(1, ...STATS.map((s) => st[s]));
+  const max = Math.min(100, Math.max(60, Math.ceil(top / 20) * 20));
+  const R = 40;
+  const ang = (i) => -Math.PI / 2 + (i * 2 * Math.PI) / n;
+  const pt = (i, v) => `${(Math.cos(ang(i)) * R * (v / max)).toFixed(1)},${(Math.sin(ang(i)) * R * (v / max)).toFixed(1)}`;
+  const rings = [];
+  for (let v = 20; v <= max; v += 20) rings.push(svg('polygon', { class: 'radar-ring' + (v === max ? ' outer' : ''), points: STATS.map((_, i) => pt(i, v)).join(' ') }));
+  const spokes = STATS.map((_, i) => { const [x, y] = pt(i, max).split(','); return svg('line', { class: 'radar-spoke', x1: 0, y1: 0, x2: x, y2: y }); });
+  const best = topStats(st, 2);
+  const chart = svg('svg', { class: 'mini-radar', viewBox: '-44 -44 88 88', role: 'img', 'aria-label': `${m.name}'s stats: ` + STATS.map((s) => `${STAT_NAMES[s]} ${st[s]}`).join(', ') },
+    rings, spokes,
+    svg('polygon', { points: STATS.map((s, i) => pt(i, st[s])).join(' '), fill: RADAR_COLOURS[0], 'fill-opacity': 0.3, stroke: RADAR_COLOURS[0], 'stroke-width': 2.5, 'stroke-linejoin': 'round' }));
+  return h('div', { class: 'mini-radar-wrap' }, chart, h('span', { class: 'mini-radar-top', title: best.map((s) => `${STAT_NAMES[s]} ${st[s]}`).join(', ') }, best.map((s) => `${s} ${st[s]}`).join(' · ')));
 }
