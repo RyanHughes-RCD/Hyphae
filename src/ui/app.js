@@ -201,7 +201,9 @@ export class App {
     }
     const busy = this.modalStack.length || document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA' || document.activeElement?.tagName === 'SELECT';
     const periodic = Math.floor(Date.now() / 1000) % 5 === 0;
-    if (!busy && (breedingChanged || (periodic && ['jobs', 'more', 'breed', 'store'].includes(this.screen)) || (report.cycles && this.screen === 'forest' && periodic))) this.render();
+    // screens holding something the player is in the middle of (a pasted share code, settings, dev tools) are not refreshed
+    const holdsInput = this.screen === 'more' && ['share', 'settings', 'dev'].includes(this.ui.moreTab);
+    if (!busy && (breedingChanged || (periodic && !holdsInput && ['jobs', 'more', 'breed', 'store'].includes(this.screen)) || (report.cycles && this.screen === 'forest' && periodic))) this.render();
     else if (periodic) this.renderHeader();
   }
 
