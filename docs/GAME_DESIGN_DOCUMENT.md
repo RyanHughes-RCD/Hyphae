@@ -25,7 +25,7 @@
 | 0.6 | Nov 2026 | Colour genetics redone (D-18): two colour genes per mushroom (one may be hidden and resurface in offspring), colour sports to neighbouring shades, and larger heritable colour shifts. Save schema 3. |
 | 0.7 | Nov 2026 | Auto-jobs (D-19): mushrooms take the job that suits them best, overflow to their next best, and are swapped off when a better-suited mushroom arrives; player pins and breaks still work. |
 | 0.8 | Nov 2026 | Breeding Pens are buildings you buy and place (D-20): one incubation per pen, up to 3; tapping a pen opens the breeding menu; Spore/Moonlit Cradle become pen upgrades. A Store screen (D-21) with Workstations, Housing, Breeding, Decor, Paths & Bridges and Ground tabs. Save schema 4 (old Breeding Nook → pen). |
-| 0.9 | Nov 2026 | Mushroom art overhaul (D-22): parts-based generator on a 30×36 frame with per-lobe shading, stems that set the cap's height, a real **second colour** for all patterns, drab stem palette. New growth forms that each lean into one kind of work — Tuftcap, Lumpcap, Tippedcap, Shaggy Inkcap; Lanky, Stubby and Warty stems; Beads, Shaggy scales and Glassy sheen markings; Inky drips. Save schema 5 (mushrooms get a second colour and a stem colour). Breeding Pens, Mushroom Homes and Cozy Homes now cover 3×3 tiles (D-23). |
+| 0.9 | Nov 2026 | Mushroom art overhaul (D-22): parts-based generator on a 30×36 frame with per-lobe shading, stems that set the cap's height, a real **second colour** for all patterns, drab stem palette. New growth forms that each lean into one kind of work — Tuftcap, Lumpcap, Tippedcap, Shaggy Inkcap; Lanky, Stubby and Warty stems; Beads, Shaggy scales and Glassy sheen markings; Inky drips. Save schema 5 (mushrooms get a second colour and a stem colour). Breeding Pens, Mushroom Homes and Cozy Homes now cover 3×3 tiles (D-23). Land tiles blend into each other with rounded, faded edges; shorelines stay crisp (D-24). |
 
 ### 0.2 Conventions
 
@@ -2050,6 +2050,7 @@ feel of breeding and visible forest life before adding more content.
 | D-13 | Affinity | Derived from highest final stat, 8 names. Approved. |
 | D-14 | Breeding cost | One free breeding, then Glimmer (soft currency). |
 | D-15 | Development stage order | Strictly linear, in the order listed. |
+| D-24 | Ground blending | Neighbouring land types meet in rounded, wandering edges with a short stepped fade (also across clearings); water shorelines stay crisp. |
 | D-23 | Big buildings | Breeding Pens, Mushroom Homes and Cozy Homes cover 3×3 tiles, centred on the tile you tap. |
 | D-22 | Mushroom art | Parts-based 30×36 generator; second colour paints patterns; drab stems; focused growth forms map to distinct job families. |
 | D-21 | Store | A Store screen with tabs for workstations, housing, breeding, decor, paths & bridges and ground. |

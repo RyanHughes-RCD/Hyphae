@@ -72,7 +72,8 @@ export function drawTile(ctx, code, tx, ty, t, seed = 0, backdrop = false) {
   } else if (code === 'w') {
     const wave = Math.floor(t * 2 + tx + ty) % 4;
     r(ctx, '#7cb8e0', x0 + 2 + wave * 3, y0 + 4 + (ty % 2) * 6, 4, 1);
-    r(ctx, '#3f78a8', x0, y0 + 15, TILE, 1);
+    // gentle darker ripples instead of a seam, so neighbouring water tiles read as one pond
+    r(ctx, '#4a88bc', x0 + Math.floor(noise(tx, ty, 31) * 11), y0 + 10 + Math.floor(noise(ty, tx, 32) * 4), 5, 1);
   } else if (code === 'x') {
     if (Math.floor(t * 2 + noise(tx, ty) * 10) % 5 === 0) r(ctx, '#d8c8ff', x0 + Math.floor(noise(tx, ty, 3) * 14), y0 + Math.floor(noise(ty, tx, 4) * 14), 1, 1);
   } else if (code === 'p') {
@@ -82,8 +83,9 @@ export function drawTile(ctx, code, tx, ty, t, seed = 0, backdrop = false) {
 }
 
 function drawRiver(ctx, x0, y0, tx, ty, t) {
-  r(ctx, '#2f6a9e', x0, y0, TILE, TILE);
-  r(ctx, '#3a78b0', x0 + 1, y0 + 1, TILE - 2, TILE - 2);
+  // no tile border: the forest blends river edges, and neighbouring river tiles flow together
+  r(ctx, '#3a78b0', x0, y0, TILE, TILE);
+  for (let i = 0; i < 4; i++) r(ctx, '#2f6a9e', x0 + Math.floor(noise(tx, ty, 40 + i) * 13), y0 + Math.floor(noise(ty, tx, 44 + i) * 15), 3, 1);
   // drifting ripples
   for (let i = 0; i < 3; i++) {
     const ph = (t * 0.6 + i / 3 + noise(tx, ty, i) * 0.3) % 1;

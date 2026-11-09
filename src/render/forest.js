@@ -508,21 +508,120 @@ export class ForestView {
   }
 
   // ------------------------------------------------------------- drawing
+  /**
+   * One clearing's ground, blended: each pixel picks its terrain from the four
+   * nearest tile centres (weighted by distance, roughened with a little noise)
+   * through an ordered dither, so different ground types meet in rounded,
+   * stippled edges that fade into each other. Neighbouring clearings are read
+   * across the seam so blends continue from one clearing to the next.
+   */
   terrainFor(id, area, t, rm) {
     let c = this.terrainCaches.get(id);
     if (!c) {
-      c = { key: null, canvas: document.createElement('canvas') };
+      c = { key: null, canvas: document.createElement('canvas'), layers: new Map() };
       c.canvas.width = LW;
       c.canvas.height = LH;
       this.terrainCaches.set(id, c);
     }
-    const key = area.tiles.join('') + (rm ? 0 : Math.floor(t * 2));
-    if (c.key !== key) {
-      const tctx = c.canvas.getContext('2d');
-      tctx.clearRect(0, 0, LW, LH);
-      for (let y = 0; y < AREA_H; y++) for (let x = 0; x < AREA_W; x++) drawTile(tctx, area.tiles[y][x], x, y, rm ? 0 : t, 0, true);
-      c.key = key;
+    const s = this.app.state;
+    const G = this.app.game;
+    const blendOf = (code) => (code === 'u' ? 'g' : code);
+    // the tile at (x, y) in this clearing's coordinates; outside it, the neighbour clearing's tile (or our own edge)
+    const cell = (x, y) => {
+      if (x >= 0 && y >= 0 && x < AREA_W && y < AREA_H) return blendOf(area.tiles[y][x]);
+      const g = G.globalTile(s, area.cx * AREA_W + x, area.cy * AREA_H + y);
+      if (g !== null && g !== undefined) return blendOf(g);
+      return blendOf(area.tiles[Math.min(AREA_H - 1, Math.max(0, y))][Math.min(AREA_W - 1, Math.max(0, x))]);
+    };
+    const flat = area.tiles.join('');
+    let ring = '';
+    for (let x = -1; x <= AREA_W; x++) ring += cell(x, -1) + cell(x, AREA_H);
+    for (let y = 0; y < AREA_H; y++) ring += cell(-1, y) + cell(AREA_W, y);
+    const animated = /[wrx]/.test(flat + ring);
+    const shape = flat + '|' + ring;
+    const key = shape + '|' + (animated && !rm ? Math.floor(t * 2) : 0);
+    if (c.key === key) return c.canvas;
+    // rippling water only needs a fresh frame now and then: rebuild one clearing per frame at most
+    if (c.shape === shape && this.terrainBudget <= 0) return c.canvas;
+    this.terrainBudget--;
+    c.key = key;
+    c.shape = shape;
+
+    // 1. paint each ground type's texture wherever it might show (its tiles and their neighbours)
+    const used = new Set();
+    for (const [, l] of c.layers) l.ctx.clearRect(0, 0, LW, LH);
+    const layer = (code) => {
+      let l = c.layers.get(code);
+      if (!l) {
+        const cv = document.createElement('canvas');
+        cv.width = LW; cv.height = LH;
+        l = { cv, ctx: cv.getContext('2d', { willReadFrequently: true }) };
+        c.layers.set(code, l);
+      }
+      return l;
+    };
+    const tt = rm ? 0 : t;
+    for (let y = 0; y < AREA_H; y++) for (let x = 0; x < AREA_W; x++) {
+      const near = new Set();
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) near.add(cell(x + dx, y + dy));
+      for (const code of near) { drawTile(layer(code).ctx, code, x, y, tt, 0, true); used.add(code); }
     }
+    const data = new Map([...used].map((code) => [code, c.layers.get(code).ctx.getImageData(0, 0, LW, LH).data]));
+
+    // 2. pick a ground type for every pixel
+    const tctx = c.canvas.getContext('2d');
+    const out = tctx.createImageData(LW, LH);
+    const od = out.data;
+    const order = [...used].sort((p, q) => LAYER_RANK(p) - LAYER_RANK(q));
+    const w = new Map();
+    for (let py = 0; py < LH; py++) {
+      const ty = Math.floor(py / TILE);
+      for (let px = 0; px < LW; px++) {
+        const tx = Math.floor(px / TILE);
+        if (area.tiles[ty][tx] === 'u') continue; // thicket: the undergrowth is drawn over it
+        // a little smooth noise so edges wander instead of running dead straight
+        const jx = (smoothNoise(px / 5, py / 5, 11) - 0.5) * 0.5;
+        const jy = (smoothNoise(px / 5, py / 5, 23) - 0.5) * 0.5;
+        const gx = (px + 0.5) / TILE - 0.5 + jx;
+        const gy = (py + 0.5) / TILE - 0.5 + jy;
+        const i0 = Math.floor(gx);
+        const j0 = Math.floor(gy);
+        const fx = gx - i0;
+        const fy = gy - j0;
+        // shorelines stay crisp: water only blends with water, land only with land
+        const own = blendOf(area.tiles[ty][tx]);
+        const ownWet = WET.has(own);
+        const side = (k) => (WET.has(k) === ownWet ? k : own);
+        const c00 = side(cell(i0, j0));
+        const c10 = side(cell(i0 + 1, j0));
+        const c01 = side(cell(i0, j0 + 1));
+        const c11 = side(cell(i0 + 1, j0 + 1));
+        const i = (py * LW + px) * 4;
+        if (c00 === c10 && c00 === c01 && c00 === c11) {
+          const src = data.get(c00);
+          od[i] = src[i]; od[i + 1] = src[i + 1]; od[i + 2] = src[i + 2]; od[i + 3] = src[i + 3];
+          continue;
+        }
+        // sharpened distance weights: a solid, rounded body with a short fade at the edge
+        w.clear();
+        const add = (k, v) => w.set(k, (w.get(k) || 0) + v * v * v * v);
+        add(c00, (1 - fx) * (1 - fy)); add(c10, fx * (1 - fy)); add(c01, (1 - fx) * fy); add(c11, fx * fy);
+        let total = 0;
+        for (const v of w.values()) total += v;
+        // blend the textures (premultiplied), stepped to a few levels so it stays pixel-art
+        let r = 0; let g = 0; let bl = 0; let al = 0;
+        const dz = BAYER4[(py & 3) * 4 + (px & 3)] - 0.5;
+        for (const [k, v] of w) {
+          const src = data.get(k);
+          const f = Math.min(1, Math.max(0, Math.round((v / total) * STEPS + dz * 0.9) / STEPS));
+          if (!f) continue;
+          const sa = src[i + 3] / 255;
+          r += src[i] * sa * f; g += src[i + 1] * sa * f; bl += src[i + 2] * sa * f; al += sa * f;
+        }
+        if (al > 0) { od[i] = r / al; od[i + 1] = g / al; od[i + 2] = bl / al; od[i + 3] = Math.min(255, al * 255); }
+      }
+    }
+    tctx.putImageData(out, 0, 0);
     return c.canvas;
   }
 
@@ -538,6 +637,7 @@ export class ForestView {
     const view = { x0: c.x - this.vw / (2 * c.zoom), y0: c.y - this.vh / (2 * c.zoom), w: this.vw / c.zoom, h: this.vh / c.zoom };
     const inView = (x, y, pad = TILE * 2) => x > view.x0 - pad && x < view.x0 + view.w + pad && y > view.y0 - pad && y < view.y0 + view.h + pad;
 
+    this.terrainBudget = 1;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = '#16231a';
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
@@ -818,6 +918,26 @@ export class ForestView {
 }
 
 /** A spore cluster growing in a pen; it glows and bobs when ready to hatch. */
+// ground layering for blends: lower types first
+const LAYER_ORDER = ['g', 'h', 'm', 'l', 'd', 's', 'x', 'p', 'w', 'r'];
+const LAYER_RANK = (code) => { const i = LAYER_ORDER.indexOf(code); return i < 0 ? LAYER_ORDER.length : i; };
+const STEPS = 4;
+const WET = new Set(['w', 'r']);
+function smoothNoise(x, y, s) {
+  const x0 = Math.floor(x); const y0 = Math.floor(y);
+  const fx = x - x0; const fy = y - y0;
+  const sx = fx * fx * (3 - 2 * fx); const sy = fy * fy * (3 - 2 * fy);
+  const a = hashNoise(x0, y0, s); const b = hashNoise(x0 + 1, y0, s);
+  const c = hashNoise(x0, y0 + 1, s); const d = hashNoise(x0 + 1, y0 + 1, s);
+  return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy;
+}
+const BAYER4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map((v) => (v + 0.5) / 16);
+function hashNoise(x, y, s) {
+  let n = (x * 374761393 + y * 668265263 + s * 2147483647) | 0;
+  n = (n ^ (n >>> 13)) * 1274126177;
+  return ((n ^ (n >>> 16)) >>> 0) / 4294967296;
+}
+
 function drawCluster(ctx, x, y, ready, t, rm) {
   const p = rm ? 0 : Math.sin(t * (ready ? 6 : 2)) * (ready ? 1 : 0.5);
   if (ready) {
