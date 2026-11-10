@@ -28,6 +28,10 @@ const ZOOM_RANGE = 4; // max zoom = fit zoom × this
 const TAP_SLOP = 7; // CSS px a pointer may move and still count as a tap
 const GRASS_TILE = 160; // logical px covered by one copy of the grass painting
 const CANOPY_TILE = 600; // logical px covered by one copy of the canopy shadow (large, soft light gaps)
+const WATER_ANIM_SCALE = 2.5; // device px per logical px below which water stops rippling
+const BORDER_BAKE_SCALE = 3; // cached hedge pictures hold 3 px per logical px (crisp until you zoom right in)
+const CANOPY_DOWNSCALE = 4; // the canopy layers are drawn at a quarter of the screen's resolution
+const CANOPY_REFRESH = 1 / 15; // seconds between canopy redraws (it drifts slowly)
 const RIM = 20; // thickness of the hedge wall at the map's edge (logical px)
 const FOLIAGE_ROW = 26; // height of one row of bushes in the undergrowth beyond the map
 
@@ -560,7 +564,9 @@ export class ForestView {
     let ring = '';
     for (let x = -1; x <= AREA_W; x++) ring += cell(x, -1) + cell(x, AREA_H);
     for (let y = 0; y < AREA_H; y++) ring += cell(-1, y) + cell(AREA_W, y);
-    const animated = /[wrx]/.test(flat + ring);
+    // rippling water is only animated close up: zoomed out it is too small to see,
+    // and re-blending every clearing's ground each half-second is costly
+    const animated = /[wrx]/.test(flat + ring) && this.cam.zoom * this.dpr >= WATER_ANIM_SCALE;
     const shape = flat + '|' + ring;
     const key = shape + '|' + (animated && !rm ? Math.floor(t * 2) : 0);
     if (c.key === key) return c.canvas;
@@ -673,8 +679,12 @@ export class ForestView {
       const th = tw * (gt.height / gt.width);
       ctx.imageSmoothingEnabled = k * (GRASS_TILE / this.grass.naturalWidth) < 1.2;
       ctx.imageSmoothingQuality = 'high';
-      for (let gy = Math.floor(view.y0 / th) * th; gy < view.y0 + view.h; gy += th) {
-        for (let gx = Math.floor(view.x0 / tw) * tw; gx < view.x0 + view.w; gx += tw) ctx.drawImage(gt, gx, gy, tw + 0.5 / k, th + 0.5 / k);
+      // one pattern fill over the view, however far out the camera is
+      if (!gt._pattern) gt._pattern = ctx.createPattern(gt, 'repeat');
+      if (gt._pattern) {
+        gt._pattern.setTransform(new DOMMatrix().scaleSelf(tw / gt.width, th / gt.height));
+        ctx.fillStyle = gt._pattern;
+        ctx.fillRect(view.x0, view.y0, view.w, view.h);
       }
     }
     ctx.imageSmoothingEnabled = false;
@@ -798,7 +808,6 @@ export class ForestView {
 
   /** Undergrowth fills thicket tiles and everything outside the map; hedge walls line its ragged edge. */
   drawBorders(ctx, view, areas) {
-    const s = this.app.state;
     const occ = new Map(areas.map((a) => [a.area.cx + ',' + a.area.cy, a.area]));
     const blocked = (gx, gy) => {
       const a = occ.get(Math.floor(gx / AREA_W) + ',' + Math.floor(gy / AREA_H));
@@ -819,12 +828,57 @@ export class ForestView {
     for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) {
       if (!occ.has(cx + ',' + cy)) ctx.fillRect(cx * LW - 0.5, cy * LH - 0.5, LW + 1, LH + 1);
     }
-    // thicket tiles inside clearings
     const visible = areas.filter(({ ox, oy }) => !(ox > view.x0 + view.w + RIM || ox + LW < view.x0 - RIM || oy > view.y0 + view.h + RIM || oy + LH < view.y0 - RIM));
-    for (const { area, ox, oy } of visible) {
-      for (let y = 0; y < AREA_H; y++) for (let x = 0; x < AREA_W; x++) if (area.tiles[y][x] === 'u') ctx.fillRect(ox + x * TILE - 0.5, oy + y * TILE - 0.5, TILE + 1, TILE + 1);
+    // zoomed out: each clearing's thicket and hedge walls come from a cached picture;
+    // zoomed in (only a clearing or two in view): drawn live at full detail
+    const k = this.cam.zoom * this.dpr;
+    const ready = this.hedgesReady();
+    for (const v of visible) {
+      if (k <= BORDER_BAKE_SCALE && ready) {
+        const img = this.bakedBorders(v, blocked);
+        ctx.drawImage(img, v.ox - RIM, v.oy - RIM, LW + 2 * RIM, LH + 2 * RIM);
+      } else this.drawAreaBorders(ctx, v, blocked);
     }
-    // hedge walls along every edge between open ground and undergrowth (patterns anchored to the world, so segments join up)
+    ctx.imageSmoothingEnabled = false;
+  }
+
+  hedgesReady() {
+    return !!(this.foliage?._pattern && ['north', 'south', 'west', 'east'].every((d) => this.hedges[d]?.naturalWidth));
+  }
+
+  /** One clearing's thicket and hedge walls, cached until its tiles (or its neighbours' edges) change. */
+  bakedBorders({ id, area, ox, oy }, blocked) {
+    this.borderCaches = this.borderCaches || new Map();
+    let ring = '';
+    for (let x = -1; x <= AREA_W; x++) ring += (blocked(area.cx * AREA_W + x, area.cy * AREA_H - 1) ? 1 : 0) + '' + (blocked(area.cx * AREA_W + x, area.cy * AREA_H + AREA_H) ? 1 : 0);
+    for (let y = 0; y < AREA_H; y++) ring += (blocked(area.cx * AREA_W - 1, area.cy * AREA_H + y) ? 1 : 0) + '' + (blocked(area.cx * AREA_W + AREA_W, area.cy * AREA_H + y) ? 1 : 0);
+    const key = area.tiles.join('') + '|' + ring + '|' + ox + ',' + oy;
+    let c = this.borderCaches.get(id);
+    if (c && c.key === key) return c.canvas;
+    if (!c) {
+      const cv = document.createElement('canvas');
+      cv.width = Math.ceil((LW + 2 * RIM) * BORDER_BAKE_SCALE);
+      cv.height = Math.ceil((LH + 2 * RIM) * BORDER_BAKE_SCALE);
+      c = { canvas: cv, key: null };
+      this.borderCaches.set(id, c);
+    }
+    const bctx = c.canvas.getContext('2d');
+    bctx.setTransform(1, 0, 0, 1, 0, 0);
+    bctx.clearRect(0, 0, c.canvas.width, c.canvas.height);
+    // the same world coordinates as the live drawing, so patterns line up across clearings
+    bctx.setTransform(BORDER_BAKE_SCALE, 0, 0, BORDER_BAKE_SCALE, -(ox - RIM) * BORDER_BAKE_SCALE, -(oy - RIM) * BORDER_BAKE_SCALE);
+    bctx.imageSmoothingEnabled = true;
+    bctx.imageSmoothingQuality = 'high';
+    this.drawAreaBorders(bctx, { area, ox, oy }, blocked);
+    c.key = key;
+    return c.canvas;
+  }
+
+  /** Thicket tiles and the hedge walls along every edge between open ground and undergrowth. */
+  drawAreaBorders(ctx, { area, ox, oy }, blocked) {
+    ctx.fillStyle = this.foliage?._pattern || '#1d3322';
+    for (let y = 0; y < AREA_H; y++) for (let x = 0; x < AREA_W; x++) if (area.tiles[y][x] === 'u') ctx.fillRect(ox + x * TILE - 0.5, oy + y * TILE - 0.5, TILE + 1, TILE + 1);
+    // hedge walls (patterns anchored to the world, so segments join up)
     const strip = (img, x, y, w, h, vertical) => {
       if (!img?.naturalWidth) return;
       if (!img._pattern) img._pattern = ctx.createPattern(img, vertical ? 'repeat-y' : 'repeat-x');
@@ -835,21 +889,17 @@ export class ForestView {
       ctx.fillRect(x, y, w, h);
     };
     const inner = RIM * 0.4; // how far the wall reaches over the open ground
-    for (const { area, ox, oy } of visible) {
-      for (let y = 0; y < AREA_H; y++) for (let x = 0; x < AREA_W; x++) {
-        if (area.tiles[y][x] === 'u') continue;
-        const gx = area.cx * AREA_W + x;
-        const gy = area.cy * AREA_H + y;
-        const px = ox + x * TILE;
-        const py = oy + y * TILE;
-        if (blocked(gx, gy - 1)) strip(this.hedges.north, px - inner * 0.5, py - RIM + inner, TILE + inner, RIM, false);
-        if (blocked(gx, gy + 1)) strip(this.hedges.south, px - inner * 0.5, py + TILE - inner, TILE + inner, RIM, false);
-        if (blocked(gx - 1, gy)) strip(this.hedges.west, px - RIM + inner, py - inner * 0.5, RIM, TILE + inner, true);
-        if (blocked(gx + 1, gy)) strip(this.hedges.east, px + TILE - inner, py - inner * 0.5, RIM, TILE + inner, true);
-      }
+    for (let y = 0; y < AREA_H; y++) for (let x = 0; x < AREA_W; x++) {
+      if (area.tiles[y][x] === 'u') continue;
+      const gx = area.cx * AREA_W + x;
+      const gy = area.cy * AREA_H + y;
+      const px = ox + x * TILE;
+      const py = oy + y * TILE;
+      if (blocked(gx, gy - 1)) strip(this.hedges.north, px - inner * 0.5, py - RIM + inner, TILE + inner, RIM, false);
+      if (blocked(gx, gy + 1)) strip(this.hedges.south, px - inner * 0.5, py + TILE - inner, TILE + inner, RIM, false);
+      if (blocked(gx - 1, gy)) strip(this.hedges.west, px - RIM + inner, py - inner * 0.5, RIM, TILE + inner, true);
+      if (blocked(gx + 1, gy)) strip(this.hedges.east, px + TILE - inner, py - inner * 0.5, RIM, TILE + inner, true);
     }
-    ctx.imageSmoothingEnabled = false;
-    void s;
   }
 
   /** Canopy shade over everything, in world space so it pans and zooms with the forest. */
@@ -859,22 +909,57 @@ export class ForestView {
     const c = this.canopy;
     const tw = CANOPY_TILE * 2;
     const th = tw * (c.shade.height / c.shade.width);
-    // two layers drifting in different directions make the light gaps slowly change shape
-    const drift = (k) => (rm ? { x: 0, y: 0 } : { x: t * 2.2 * k + Math.sin(t * 0.13 * k) * 10, y: t * 0.9 * k + Math.cos(t * 0.11 * k) * 7 });
-    const d1 = drift(1);
-    const d2 = drift(-0.7);
-    ctx.imageSmoothingEnabled = true;
-    // leaf shade multiplies, so the greens stay rich instead of turning grey
-    ctx.globalCompositeOperation = 'multiply';
-    ctx.globalAlpha = look.shade * 1.3;
-    tile(ctx, c.shade, tw, th, d1.x, d1.y, view);
-    ctx.globalAlpha = look.shade * 0.9;
-    tile(ctx, c.shade, tw * 1.37, th * 1.37, d2.x + 97, d2.y + 41, view);
-    // sunlit gaps: warm, brightened ground where the leaves part
+    // The canopy is soft and drifts slowly, so it is drawn into two small
+    // offscreen layers (a quarter of the screen's resolution), refreshed a few
+    // times a second, and blended over the forest once each. Blending the full
+    // screen layer by layer every frame was the most expensive part of drawing.
+    const W = Math.max(1, Math.ceil(this.canvas.width / CANOPY_DOWNSCALE));
+    const H = Math.max(1, Math.ceil(this.canvas.height / CANOPY_DOWNSCALE));
+    let L = this.canopyLayers;
+    if (!L || L.shade.width !== W || L.shade.height !== H) {
+      const mk = () => { const cv = document.createElement('canvas'); cv.width = W; cv.height = H; return cv; };
+      L = this.canopyLayers = { shade: mk(), light: mk(), key: null, at: -1 };
+    }
     const rain = cond.raining ? 0.35 : 1;
+    const viewKey = [view.x0, view.y0, view.w, cond.phase, rain].map((v) => (typeof v === 'number' ? v.toFixed(1) : v)).join('|');
+    const stale = viewKey !== L.key || (!rm && t - L.at > CANOPY_REFRESH);
+    if (stale) {
+      L.key = viewKey;
+      L.at = t;
+      const drift = (k) => (rm ? { x: 0, y: 0 } : { x: t * 2.2 * k + Math.sin(t * 0.13 * k) * 10, y: t * 0.9 * k + Math.cos(t * 0.11 * k) * 7 });
+      const d1 = drift(1);
+      const d2 = drift(-0.7);
+      // world → layer pixels
+      const sx = W / view.w;
+      const sy = H / view.h;
+      // shade: white, multiplied by both leaf layers (the same maths as multiplying them onto the forest one by one)
+      const sc = L.shade.getContext('2d');
+      sc.setTransform(1, 0, 0, 1, 0, 0);
+      sc.globalCompositeOperation = 'source-over';
+      sc.globalAlpha = 1;
+      sc.fillStyle = '#fff';
+      sc.fillRect(0, 0, W, H);
+      sc.setTransform(sx, 0, 0, sy, -view.x0 * sx, -view.y0 * sy);
+      sc.imageSmoothingEnabled = true;
+      sc.globalCompositeOperation = 'multiply';
+      sc.globalAlpha = Math.min(1, look.shade * 1.3);
+      tile(sc, c.shade, tw, th, d1.x, d1.y, view);
+      sc.globalAlpha = Math.min(1, look.shade * 0.9);
+      tile(sc, c.shade, tw * 1.37, th * 1.37, d2.x + 97, d2.y + 41, view);
+      // sunlit gaps
+      const lc = L.light.getContext('2d');
+      lc.setTransform(1, 0, 0, 1, 0, 0);
+      lc.clearRect(0, 0, W, H);
+      lc.setTransform(sx, 0, 0, sy, -view.x0 * sx, -view.y0 * sy);
+      lc.imageSmoothingEnabled = true;
+      lc.globalAlpha = Math.min(1, look.light * 2.2 * rain);
+      tile(lc, tinted(c.light, look.tint, this.rayCache), tw, th, d1.x, d1.y, view);
+    }
+    ctx.imageSmoothingEnabled = true;
+    ctx.globalCompositeOperation = 'multiply';
+    ctx.drawImage(L.shade, view.x0, view.y0, view.w, view.h);
     ctx.globalCompositeOperation = 'soft-light';
-    ctx.globalAlpha = Math.min(1, look.light * 2.2 * rain);
-    tile(ctx, tinted(c.light, look.tint, this.rayCache), tw, th, d1.x, d1.y, view);
+    ctx.drawImage(L.light, view.x0, view.y0, view.w, view.h);
     ctx.globalCompositeOperation = 'source-over';
     ctx.globalAlpha = 1;
     ctx.imageSmoothingEnabled = false;

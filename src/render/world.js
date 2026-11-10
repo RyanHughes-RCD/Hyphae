@@ -334,25 +334,60 @@ function drawOverride(ctx, ov, x, y, span = TILE) {
   ctx.drawImage(ov, x + Math.round((span - ov.width) / 2), y + span - ov.height);
 }
 
+// art that moves with time is drawn live; everything else is drawn once and reused
+const ANIMATED_ART = new Set(['nook', 'reeds', 'shrine', 'grove', 'pond', 'lantern', 'tree', 'pine', 'moonstone']);
+const ART_PAD = 24; // room around the footprint for shadows and tall art
+const artCache = new Map();
+
+/** A structure's art (static parts only) as a ready-made picture, drawn at (ART_PAD, ART_PAD). */
+function cachedArt(def, state, n, ov) {
+  const key = (def.overrideKey || def.sprite) + '|' + state + '|' + n + '|' + (ov ? 'ov' : '');
+  let c = artCache.get(key);
+  if (c) return c;
+  c = document.createElement('canvas');
+  c.width = n * TILE + ART_PAD * 2;
+  c.height = n * TILE + ART_PAD * 2;
+  const cx = c.getContext('2d');
+  cx.imageSmoothingEnabled = false;
+  const fn = ov ? (k, xx, yy) => drawOverride(k, ov, xx, yy, n * TILE) : ART[def.sprite] || ART.stones;
+  if (state === 'ruin') {
+    cx.globalAlpha = 0.45;
+    fn(cx, ART_PAD, ART_PAD, 0);
+    cx.globalAlpha = 1;
+    drawVines(cx, ART_PAD, ART_PAD);
+  } else fn(cx, ART_PAD, ART_PAD, 0);
+  artCache.set(key, c);
+  return c;
+}
+
+function drawVines(ctx, x, y) {
+  r(ctx, '#3f6a2a', x + 2, y + 3, 1, 10); r(ctx, '#3f6a2a', x + 3, y + 6, 4, 1); r(ctx, '#3f6a2a', x + 11, y + 5, 1, 9);
+  r(ctx, '#6a6a70', x + 5, y + 13, 3, 2); r(ctx, '#6a6a70', x + 10, y + 12, 2, 2);
+}
+
+/** Forget cached art (after sprites are edited). */
+export function clearArtCache() {
+  artCache.clear();
+}
+
 /** Draw a structure on its tile; a big one (def.size) is centred on that tile and covers size × size tiles. */
 export function drawStructure(ctx, def, tx, ty, state, t) {
   const n = def.size || 1;
   const x = (tx - (n - 1) / 2) * TILE;
   const y = (ty - (n - 1) / 2) * TILE;
   const ov = overrideCanvas(def.overrideKey || 'structure:' + def.sprite);
-  const fn = ov ? (c, xx, yy) => drawOverride(c, ov, xx, yy, n * TILE) : ART[def.sprite] || ART.stones;
-  if (state === 'ruin') {
-    ctx.globalAlpha = 0.45;
-    fn(ctx, x, y, 0);
-    ctx.globalAlpha = 1;
-    // vines and rubble
-    r(ctx, '#3f6a2a', x + 2, y + 3, 1, 10); r(ctx, '#3f6a2a', x + 3, y + 6, 4, 1); r(ctx, '#3f6a2a', x + 11, y + 5, 1, 9);
-    r(ctx, '#6a6a70', x + 5, y + 13, 3, 2); r(ctx, '#6a6a70', x + 10, y + 12, 2, 2);
-    // restore marker
-    const p = Math.sin(t * 3) > 0 ? 0 : 1;
-    r(ctx, '#ffd75e', x + 12, y + p, 3, 3); r(ctx, '#5a3a00', x + 13, y + 1 + p, 1, 1);
+  const live = !ov && ANIMATED_ART.has(def.sprite) && state !== 'ruin';
+  if (!live && typeof document !== 'undefined') {
+    // one drawImage instead of dozens of little rectangles every frame
+    ctx.drawImage(cachedArt(def, state, n, ov), x - ART_PAD, y - ART_PAD);
+    if (state === 'ruin') {
+      // restore marker
+      const p = Math.sin(t * 3) > 0 ? 0 : 1;
+      r(ctx, '#ffd75e', x + 12, y + p, 3, 3); r(ctx, '#5a3a00', x + 13, y + 1 + p, 1, 1);
+    }
     return;
   }
+  const fn = ov ? (c, xx, yy) => drawOverride(c, ov, xx, yy, n * TILE) : ART[def.sprite] || ART.stones;
   fn(ctx, x, y, t);
 }
 

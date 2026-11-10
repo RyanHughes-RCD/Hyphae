@@ -2,6 +2,7 @@
 import { App } from './ui/app.js';
 import { setSpriteOverrides } from './render/sprites.js';
 import { registerCustomDecorations } from './content/world.js';
+import { clearArtCache } from './render/world.js';
 
 const root = document.getElementById('app');
 
@@ -13,6 +14,7 @@ async function loadSprites() {
     const json = await res.json();
     const sprites = json && typeof json.sprites === 'object' ? json.sprites : {};
     setSpriteOverrides(sprites);
+    clearArtCache();
     registerCustomDecorations(sprites);
   } catch (err) {
     console.warn('Sprite overrides not loaded:', err.message);
